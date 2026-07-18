@@ -1,0 +1,432 @@
+[
+  {
+    "permit_id": "PERM-NORM-100",
+    "zone": "Zone-A",
+    "permit_type": "routine",
+    "issued_at": "2026-07-15T12:39:05.945706",
+    "closed_at": "2026-07-15T16:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-NORM-101",
+    "zone": "Zone-B",
+    "permit_type": "electrical",
+    "issued_at": "2026-07-15T18:39:05.945706",
+    "closed_at": "2026-07-15T22:39:05.945706",
+    "issued_by": "Engineer Mike",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-NORM-102",
+    "zone": "Zone-F",
+    "permit_type": "routine",
+    "issued_at": "2026-07-16T02:39:05.945706",
+    "closed_at": "2026-07-16T06:39:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-NORM-103",
+    "zone": "Zone-C",
+    "permit_type": "electrical",
+    "issued_at": "2026-07-16T12:39:05.945706",
+    "closed_at": "2026-07-16T16:39:05.945706",
+    "issued_by": "Engineer Mike",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-NORM-104",
+    "zone": "Zone-D",
+    "permit_type": "routine",
+    "issued_at": "2026-07-17T02:39:05.945706",
+    "closed_at": "2026-07-17T06:39:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-NORM-105",
+    "zone": "Zone-F",
+    "permit_type": "confined_space",
+    "issued_at": "2026-07-17T10:39:05.945706",
+    "closed_at": "2026-07-17T13:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-NORM-106",
+    "zone": "Zone-E",
+    "permit_type": "routine",
+    "issued_at": "2026-07-18T00:39:05.945706",
+    "closed_at": "2026-07-18T04:39:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-RISK-201",
+    "zone": "Zone-A",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-16T09:09:05.945706",
+    "closed_at": "2026-07-16T11:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-RISK-202",
+    "zone": "Zone-B",
+    "permit_type": "confined_space",
+    "issued_at": "2026-07-16T21:09:05.945706",
+    "closed_at": "2026-07-17T00:09:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-RISK-203",
+    "zone": "Zone-C",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-17T09:09:05.945706",
+    "closed_at": "2026-07-17T12:09:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-RISK-204",
+    "zone": "Zone-D",
+    "permit_type": "electrical",
+    "issued_at": "2026-07-17T21:09:05.945706",
+    "closed_at": "2026-07-18T00:09:05.945706",
+    "issued_by": "Engineer Mike",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-SILENT-301",
+    "zone": "Zone-E",
+    "permit_type": "confined_space",
+    "issued_at": "2026-07-15T19:39:05.945706",
+    "closed_at": "2026-07-15T22:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-NEG-TIMEGAP",
+    "zone": "Zone-A",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-15T22:39:05.945706",
+    "closed_at": "2026-07-15T23:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-NEG-ADJACENT",
+    "zone": "Zone-A",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-16T03:09:05.945706",
+    "closed_at": "2026-07-16T04:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "permit_id": "PERM-Plant-B-NORM-100",
+    "zone": "Zone-A",
+    "permit_type": "routine",
+    "issued_at": "2026-07-15T16:39:05.945706",
+    "closed_at": "2026-07-15T20:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-NORM-101",
+    "zone": "Zone-B",
+    "permit_type": "electrical",
+    "issued_at": "2026-07-15T22:39:05.945706",
+    "closed_at": "2026-07-16T02:39:05.945706",
+    "issued_by": "Engineer Mike",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-NORM-102",
+    "zone": "Zone-F",
+    "permit_type": "routine",
+    "issued_at": "2026-07-16T06:39:05.945706",
+    "closed_at": "2026-07-16T10:39:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-NORM-103",
+    "zone": "Zone-C",
+    "permit_type": "electrical",
+    "issued_at": "2026-07-16T16:39:05.945706",
+    "closed_at": "2026-07-16T20:39:05.945706",
+    "issued_by": "Engineer Mike",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-NORM-104",
+    "zone": "Zone-D",
+    "permit_type": "routine",
+    "issued_at": "2026-07-17T06:39:05.945706",
+    "closed_at": "2026-07-17T10:39:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-NORM-105",
+    "zone": "Zone-F",
+    "permit_type": "confined_space",
+    "issued_at": "2026-07-17T14:39:05.945706",
+    "closed_at": "2026-07-17T17:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-NORM-106",
+    "zone": "Zone-E",
+    "permit_type": "routine",
+    "issued_at": "2026-07-18T04:39:05.945706",
+    "closed_at": "2026-07-15T08:39:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-RISK-201",
+    "zone": "Zone-B",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-15T21:09:05.945706",
+    "closed_at": "2026-07-15T23:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-RISK-202",
+    "zone": "Zone-C",
+    "permit_type": "confined_space",
+    "issued_at": "2026-07-16T09:09:05.945706",
+    "closed_at": "2026-07-16T12:09:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-RISK-203",
+    "zone": "Zone-D",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-16T21:09:05.945706",
+    "closed_at": "2026-07-17T00:09:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-RISK-204",
+    "zone": "Zone-E",
+    "permit_type": "electrical",
+    "issued_at": "2026-07-17T09:09:05.945706",
+    "closed_at": "2026-07-17T12:09:05.945706",
+    "issued_by": "Engineer Mike",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-SILENT-301",
+    "zone": "Zone-F",
+    "permit_type": "confined_space",
+    "issued_at": "2026-07-17T20:09:05.945706",
+    "closed_at": "2026-07-17T23:09:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-NEG-TIMEGAP",
+    "zone": "Zone-B",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-15T22:39:05.945706",
+    "closed_at": "2026-07-15T23:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-B-NEG-ADJACENT",
+    "zone": "Zone-A",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-16T03:09:05.945706",
+    "closed_at": "2026-07-16T04:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "permit_id": "PERM-Plant-C-NORM-100",
+    "zone": "Zone-A",
+    "permit_type": "routine",
+    "issued_at": "2026-07-15T20:39:05.945706",
+    "closed_at": "2026-07-16T00:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-NORM-101",
+    "zone": "Zone-B",
+    "permit_type": "electrical",
+    "issued_at": "2026-07-16T02:39:05.945706",
+    "closed_at": "2026-07-16T06:39:05.945706",
+    "issued_by": "Engineer Mike",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-NORM-102",
+    "zone": "Zone-F",
+    "permit_type": "routine",
+    "issued_at": "2026-07-16T10:39:05.945706",
+    "closed_at": "2026-07-16T14:39:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-NORM-103",
+    "zone": "Zone-C",
+    "permit_type": "electrical",
+    "issued_at": "2026-07-16T20:39:05.945706",
+    "closed_at": "2026-07-17T00:39:05.945706",
+    "issued_by": "Engineer Mike",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-NORM-104",
+    "zone": "Zone-D",
+    "permit_type": "routine",
+    "issued_at": "2026-07-17T10:39:05.945706",
+    "closed_at": "2026-07-17T14:39:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-NORM-105",
+    "zone": "Zone-F",
+    "permit_type": "confined_space",
+    "issued_at": "2026-07-17T18:39:05.945706",
+    "closed_at": "2026-07-17T21:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-NORM-106",
+    "zone": "Zone-E",
+    "permit_type": "routine",
+    "issued_at": "2026-07-15T08:39:05.945706",
+    "closed_at": "2026-07-15T12:39:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-RISK-201",
+    "zone": "Zone-C",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-16T15:09:05.945706",
+    "closed_at": "2026-07-16T17:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-RISK-202",
+    "zone": "Zone-D",
+    "permit_type": "confined_space",
+    "issued_at": "2026-07-17T03:09:05.945706",
+    "closed_at": "2026-07-17T06:09:05.945706",
+    "issued_by": "Officer Sarah",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-RISK-203",
+    "zone": "Zone-E",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-17T15:09:05.945706",
+    "closed_at": "2026-07-17T18:09:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-RISK-204",
+    "zone": "Zone-F",
+    "permit_type": "electrical",
+    "issued_at": "2026-07-16T03:09:05.945706",
+    "closed_at": "2026-07-16T06:09:05.945706",
+    "issued_by": "Engineer Mike",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-SILENT-301",
+    "zone": "Zone-A",
+    "permit_type": "confined_space",
+    "issued_at": "2026-07-15T14:09:05.945706",
+    "closed_at": "2026-07-15T17:09:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-NEG-TIMEGAP",
+    "zone": "Zone-C",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-15T22:39:05.945706",
+    "closed_at": "2026-07-15T23:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-Plant-C-NEG-ADJACENT",
+    "zone": "Zone-A",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-16T03:09:05.945706",
+    "closed_at": "2026-07-16T04:39:05.945706",
+    "issued_by": "Supervisor Jack",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "permit_id": "PERM-VIZAG-901",
+    "zone": "Zone-C",
+    "permit_type": "hot_work",
+    "issued_at": "2026-07-17T18:39:05.945706",
+    "closed_at": "2026-07-17T23:39:05.945706",
+    "issued_by": "Senior Inspector Prasad",
+    "dataset": "vizag_replay",
+    "plant_id": "Plant-A"
+  }
+]

@@ -1,0 +1,227 @@
+[
+  {
+    "zone": "Zone-F",
+    "equipment_id": "PUMP-Plant-A-ZF-11",
+    "event_type": "inspection",
+    "logged_at": "2026-07-15T14:39:05.945706",
+    "notes": "Routine pump vibration analysis. Normal.",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "zone": "Zone-C",
+    "equipment_id": "HVAC-Plant-A-ZC-02",
+    "event_type": "repair",
+    "logged_at": "2026-07-15T23:39:05.945706",
+    "notes": "Replaced filter belt. Operational.",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "zone": "Zone-D",
+    "equipment_id": "VALVE-Plant-A-ZD-99",
+    "event_type": "inspection",
+    "logged_at": "2026-07-16T14:39:05.945706",
+    "notes": "Visual seal inspection completed.",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "zone": "Zone-E",
+    "equipment_id": "FAN-Plant-A-ZE-14",
+    "event_type": "inspection",
+    "logged_at": "2026-07-17T05:39:05.945706",
+    "notes": "Bearing temperature nominal.",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "zone": "Zone-A",
+    "equipment_id": "VENT-ZA-09",
+    "event_type": "overdue_flag",
+    "logged_at": "2026-07-16T08:54:05.945706",
+    "notes": "Annual exhaust fan airflow validation. Overdue by 15 days.",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "zone": "Zone-B",
+    "equipment_id": "DET-ZB-02",
+    "event_type": "overdue_flag",
+    "logged_at": "2026-07-16T20:09:05.945706",
+    "notes": "Carbon Monoxide electrochemical cell calibration. Overdue by 10 days.",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "zone": "Zone-C",
+    "equipment_id": "VALVE-ZC-44",
+    "event_type": "repair",
+    "logged_at": "2026-07-17T08:54:05.945706",
+    "notes": "Active repair: replacing bonnet gasket on acid gas valve.",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "zone": "Zone-D",
+    "equipment_id": "SW-ZD-01",
+    "event_type": "overdue_flag",
+    "logged_at": "2026-07-17T20:24:05.945706",
+    "notes": "Substation switchgear safety isolator physical inspection. Overdue by 5 days.",
+    "dataset": "default",
+    "plant_id": "Plant-A"
+  },
+  {
+    "zone": "Zone-F",
+    "equipment_id": "PUMP-Plant-B-ZF-11",
+    "event_type": "inspection",
+    "logged_at": "2026-07-15T18:39:05.945706",
+    "notes": "Routine pump vibration analysis. Normal.",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "zone": "Zone-C",
+    "equipment_id": "HVAC-Plant-B-ZC-02",
+    "event_type": "repair",
+    "logged_at": "2026-07-16T03:39:05.945706",
+    "notes": "Replaced filter belt. Operational.",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "zone": "Zone-D",
+    "equipment_id": "VALVE-Plant-B-ZD-99",
+    "event_type": "inspection",
+    "logged_at": "2026-07-16T18:39:05.945706",
+    "notes": "Visual seal inspection completed.",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "zone": "Zone-E",
+    "equipment_id": "FAN-Plant-B-ZE-14",
+    "event_type": "inspection",
+    "logged_at": "2026-07-17T09:39:05.945706",
+    "notes": "Bearing temperature nominal.",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "zone": "Zone-B",
+    "equipment_id": "VENT-ZA-09-Plant-B",
+    "event_type": "overdue_flag",
+    "logged_at": "2026-07-15T20:54:05.945706",
+    "notes": "Annual exhaust fan airflow validation. Overdue by 15 days.",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "zone": "Zone-C",
+    "equipment_id": "DET-ZB-02-Plant-B",
+    "event_type": "overdue_flag",
+    "logged_at": "2026-07-16T08:09:05.945706",
+    "notes": "Carbon Monoxide electrochemical cell calibration. Overdue by 10 days.",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "zone": "Zone-D",
+    "equipment_id": "VALVE-ZC-44-Plant-B",
+    "event_type": "repair",
+    "logged_at": "2026-07-16T20:54:05.945706",
+    "notes": "Active repair: replacing bonnet gasket on acid gas valve.",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "zone": "Zone-E",
+    "equipment_id": "SW-ZD-01-Plant-B",
+    "event_type": "overdue_flag",
+    "logged_at": "2026-07-17T08:24:05.945706",
+    "notes": "Substation switchgear safety isolator physical inspection. Overdue by 5 days.",
+    "dataset": "default",
+    "plant_id": "Plant-B"
+  },
+  {
+    "zone": "Zone-F",
+    "equipment_id": "PUMP-Plant-C-ZF-11",
+    "event_type": "inspection",
+    "logged_at": "2026-07-15T22:39:05.945706",
+    "notes": "Routine pump vibration analysis. Normal.",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "zone": "Zone-C",
+    "equipment_id": "HVAC-Plant-C-ZC-02",
+    "event_type": "repair",
+    "logged_at": "2026-07-16T07:39:05.945706",
+    "notes": "Replaced filter belt. Operational.",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "zone": "Zone-D",
+    "equipment_id": "VALVE-Plant-C-ZD-99",
+    "event_type": "inspection",
+    "logged_at": "2026-07-16T22:39:05.945706",
+    "notes": "Visual seal inspection completed.",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "zone": "Zone-E",
+    "equipment_id": "FAN-Plant-C-ZE-14",
+    "event_type": "inspection",
+    "logged_at": "2026-07-17T13:39:05.945706",
+    "notes": "Bearing temperature nominal.",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "zone": "Zone-C",
+    "equipment_id": "VENT-ZA-09-Plant-C",
+    "event_type": "overdue_flag",
+    "logged_at": "2026-07-16T14:54:05.945706",
+    "notes": "Annual exhaust fan airflow validation. Overdue by 15 days.",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "zone": "Zone-D",
+    "equipment_id": "DET-ZB-02-Plant-C",
+    "event_type": "overdue_flag",
+    "logged_at": "2026-07-17T02:09:05.945706",
+    "notes": "Carbon Monoxide electrochemical cell calibration. Overdue by 10 days.",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "zone": "Zone-E",
+    "equipment_id": "VALVE-ZC-44-Plant-C",
+    "event_type": "repair",
+    "logged_at": "2026-07-17T14:54:05.945706",
+    "notes": "Active repair: replacing bonnet gasket on acid gas valve.",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "zone": "Zone-F",
+    "equipment_id": "SW-ZD-01-Plant-C",
+    "event_type": "overdue_flag",
+    "logged_at": "2026-07-16T02:24:05.945706",
+    "notes": "Substation switchgear safety isolator physical inspection. Overdue by 5 days.",
+    "dataset": "default",
+    "plant_id": "Plant-C"
+  },
+  {
+    "zone": "Zone-C",
+    "equipment_id": "REG-COVEN-11",
+    "event_type": "overdue_flag",
+    "logged_at": "2026-07-17T12:09:05.945706",
+    "notes": "Coke oven battery gas collector pressure regulator calibration overdue.",
+    "dataset": "vizag_replay",
+    "plant_id": "Plant-A"
+  }
+]

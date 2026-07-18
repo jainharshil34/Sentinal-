@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+/frontend/node_modules/
+/backend/venv/
+/backend/.venv/
+venv/
+.venv/
+
+# Pytest and Python Cache
+.pytest_cache/
+/backend/.pytest_cache/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Next.js Build Output
+/frontend/.next/
+/frontend/out/
+/frontend/build/
+
+# Local Databases and Environment Files
+*.db
+/backend/sentinelgrid.db
+/sentinelgrid.db
+.env
+backend/.env
+frontend/.env
+*.log
