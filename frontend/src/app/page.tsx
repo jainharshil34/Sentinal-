@@ -23,7 +23,9 @@ import {
   Database,
   Radio,
   Brain,
-  Download
+  Download,
+  Volume2,
+  VolumeX
 } from "lucide-react";
 import { AlertExplainabilityChart } from "@/components/AlertExplainabilityChart";
 
@@ -297,6 +299,9 @@ export default function Dashboard() {
   // Active Plant Deployment Mode State (shadow or live)
   const [deploymentMode, setDeploymentMode] = useState<string>("shadow");
 
+  // Audio Alarm Mute State
+  const [isAlarmMuted, setIsAlarmMuted] = useState<boolean>(false);
+
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -480,7 +485,7 @@ export default function Dashboard() {
 
   // Synchronize warning alarm audio oscillators with current alarm state
   useEffect(() => {
-    if (!alarmState) {
+    if (!alarmState || isAlarmMuted) {
       stopAllAlarms();
       return;
     }
@@ -494,7 +499,7 @@ export default function Dashboard() {
     }
     
     return () => stopAllAlarms();
-  }, [alarmState?.facility_evacuation_active, alarmState?.local_alerts_active.join(",")]);
+  }, [alarmState?.facility_evacuation_active, alarmState?.local_alerts_active.join(","), isAlarmMuted]);
 
   const handleAcknowledgeLocal = async (zone: string) => {
     try {
@@ -544,33 +549,33 @@ export default function Dashboard() {
   };
 
   // Helper to determine safety tier for a specific zone based on active triggered rules and watch flags
-  const getZoneStatus = useCallback((zoneName: string): { tier: number; colorClass: string; strokeClass: string; fillClass: string; isCascaded: boolean } => {
-    if (alarmState?.facility_evacuation_active) {
+  const getZoneStatus = useCallback((zoneName: string): { tier: number; isRisk100: boolean; isRisk75Plus: boolean; colorClass: string; strokeClass: string; fillClass: string; isCascaded: boolean } => {
+    const isEvacActive = alarmState?.facility_evacuation_active || false;
+    const isLocalActive = alarmState?.local_alerts_active?.includes(zoneName) || false;
+
+    const zoneRules = riskAssessment ? riskAssessment.triggered_rules.filter(rule => 
+      rule.reason.includes(zoneName) || 
+      rule.contributing_signals.some((sig: any) => sig.zone === zoneName)
+    ) : [];
+
+    const hasMaxSeverity = zoneRules.some(r => r.severity === 3);
+    const isZoneRisk100 = isEvacActive || isLocalActive || hasMaxSeverity || (riskAssessment?.score === 100 && zoneRules.length > 0);
+
+    if (isZoneRisk100) {
       return { 
         tier: 3, 
-        colorClass: "text-rose-500 font-bold font-black", 
-        strokeClass: "stroke-rose-500 animate-[pulse_1s_infinite] stroke-[3px]", 
-        fillClass: "fill-rose-500/30 hover:fill-rose-500/40",
-        isCascaded: false 
-      };
-    }
-    if (alarmState?.local_alerts_active?.includes(zoneName)) {
-      return { 
-        tier: 3, 
+        isRisk100: true,
+        isRisk75Plus: true,
         colorClass: "text-rose-500 font-bold font-black animate-pulse", 
-        strokeClass: "stroke-rose-600 animate-[pulse_1.2s_infinite] stroke-[3px]", 
-        fillClass: "fill-rose-600/35 hover:fill-rose-600/45",
+        strokeClass: "stroke-rose-500 animate-[pulse_0.6s_infinite] stroke-[4px]", 
+        fillClass: "fill-rose-600/50 animate-[pulse_0.6s_infinite] hover:fill-rose-600/70",
         isCascaded: false 
       };
     }
 
-    if (!riskAssessment) return { tier: 1, colorClass: "text-emerald-400", strokeClass: "stroke-emerald-500/40", fillClass: "fill-emerald-500/10", isCascaded: false };
-    
-    // Check if any rule violations target this zone
-    const zoneRules = riskAssessment.triggered_rules.filter(rule => 
-      rule.reason.includes(zoneName) || 
-      rule.contributing_signals.some((sig: any) => sig.zone === zoneName)
-    );
+    if (!riskAssessment) return { tier: 1, isRisk100: false, isRisk75Plus: false, colorClass: "text-emerald-400", strokeClass: "stroke-emerald-500/40", fillClass: "fill-emerald-500/10", isCascaded: false };
+
+    const isZoneRisk75Plus = (riskAssessment.score >= 75 && zoneRules.length > 0) || zoneRules.some(r => r.severity >= 2);
 
     if (zoneRules.length === 0) {
       // Check if there are watch flags for this zone
@@ -578,6 +583,8 @@ export default function Dashboard() {
       if (zoneWatchFlags.length > 0) {
         return {
           tier: 0,
+          isRisk100: false,
+          isRisk75Plus: false,
           colorClass: "text-sky-400 font-bold",
           strokeClass: "stroke-sky-500 animate-[pulse_2s_infinite] stroke-2",
           fillClass: "fill-sky-500/10 hover:fill-sky-500/20",
@@ -586,6 +593,8 @@ export default function Dashboard() {
       }
       return { 
         tier: 1, 
+        isRisk100: false,
+        isRisk75Plus: false,
         colorClass: "text-emerald-400", 
         strokeClass: "stroke-emerald-500/40", 
         fillClass: "fill-emerald-500/10 hover:fill-emerald-500/20",
@@ -594,19 +603,24 @@ export default function Dashboard() {
     }
 
     const hasCascadeRule = zoneRules.some(rule => rule.rule_name === "RULE_ADJACENT_ZONE_ESCALATION");
-    const maxSeverity = zoneRules.reduce((max, r) => Math.max(max, r.severity), 0);
     
-    if (maxSeverity === 3) {
-      return { 
-        tier: 3, 
-        colorClass: "text-rose-500 font-bold", 
-        strokeClass: "stroke-rose-500 animate-pulse stroke-2", 
-        fillClass: "fill-rose-500/20 hover:fill-rose-500/30",
-        isCascaded: false 
-      };
-    } else if (hasCascadeRule) {
+    if (isZoneRisk75Plus && !hasCascadeRule) {
       return { 
         tier: 2, 
+        isRisk100: false,
+        isRisk75Plus: true,
+        colorClass: "text-amber-400 font-bold animate-pulse", 
+        strokeClass: "stroke-amber-400 animate-[pulse_1s_infinite] stroke-[3px]", 
+        fillClass: "fill-amber-500/40 animate-[pulse_1s_infinite] hover:fill-amber-500/60",
+        isCascaded: false 
+      };
+    }
+
+    if (hasCascadeRule) {
+      return { 
+        tier: 2, 
+        isRisk100: false,
+        isRisk75Plus: false,
         colorClass: "text-sky-400 font-bold", 
         strokeClass: "stroke-sky-500 stroke-2 animate-[pulse_3s_infinite]", 
         fillClass: "fill-sky-500/5 hover:fill-sky-500/10",
@@ -615,6 +629,8 @@ export default function Dashboard() {
     } else {
       return { 
         tier: 2, 
+        isRisk100: false,
+        isRisk75Plus: false,
         colorClass: "text-amber-500 font-bold", 
         strokeClass: "stroke-amber-500 stroke-2", 
         fillClass: "fill-amber-500/20 hover:fill-amber-500/30",
@@ -831,6 +847,37 @@ export default function Dashboard() {
           }`}>
             {deploymentMode === "live" ? "Live Mode" : "Shadow Mode"}
           </span>
+
+          <span className="text-slate-700">|</span>
+          <button
+            onClick={() => {
+              if (isAlarmMuted) {
+                setIsAlarmMuted(false);
+              } else {
+                setIsAlarmMuted(true);
+                stopAllAlarms();
+              }
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+              isAlarmMuted 
+                ? "bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700" 
+                : (alarmState?.local_alerts_active?.length || alarmState?.facility_evacuation_active || riskAssessment?.tier === 3)
+                ? "bg-rose-600 hover:bg-rose-500 text-white border border-rose-400 animate-bounce shadow-lg shadow-rose-900/50"
+                : "bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800"
+            }`}
+          >
+            {isAlarmMuted ? (
+              <>
+                <VolumeX className="h-3.5 w-3.5 text-rose-400" />
+                <span>Alarm Muted</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="h-3.5 w-3.5 text-white animate-pulse" />
+                <span>Stop Alarm</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
@@ -971,9 +1018,13 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="40" y="40" width="200" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-A").strokeClass} ${getZoneStatus("Zone-A").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-A").isCascaded ? "6 4" : undefined} />
                     <text x="60" y="70" className="fill-white font-extrabold text-sm tracking-wider">ZONE-A</text>
-                    {getZoneStatus("Zone-A").isCascaded && (
+                    {getZoneStatus("Zone-A").isRisk100 ? (
+                      <text x="140" y="70" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
+                    ) : getZoneStatus("Zone-A").isRisk75Plus ? (
+                      <text x="140" y="70" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
+                    ) : getZoneStatus("Zone-A").isCascaded ? (
                       <text x="170" y="70" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    )}
+                    ) : null}
                     <text x="60" y="90" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Ventilation Hub</text>
                     <text x="60" y="125" className="fill-slate-300 font-mono text-[10px]">
                       CH4: {zoneGasData["Zone-A"]?.["CH4"] !== undefined ? `${zoneGasData["Zone-A"]["CH4"]} ppm` : "N/A"}
@@ -987,9 +1038,13 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="40" y="220" width="200" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-B").strokeClass} ${getZoneStatus("Zone-B").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-B").isCascaded ? "6 4" : undefined} />
                     <text x="60" y="250" className="fill-white font-extrabold text-sm tracking-wider">ZONE-B</text>
-                    {getZoneStatus("Zone-B").isCascaded && (
+                    {getZoneStatus("Zone-B").isRisk100 ? (
+                      <text x="140" y="250" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
+                    ) : getZoneStatus("Zone-B").isRisk75Plus ? (
+                      <text x="140" y="250" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
+                    ) : getZoneStatus("Zone-B").isCascaded ? (
                       <text x="170" y="250" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    )}
+                    ) : null}
                     <text x="60" y="270" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Confined Storage</text>
                     <text x="60" y="305" className="fill-slate-300 font-mono text-[10px]">
                       CO: {zoneGasData["Zone-B"]?.["CO"] !== undefined ? `${zoneGasData["Zone-B"]["CO"]} ppm` : "N/A"}
@@ -1003,9 +1058,13 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="280" y="40" width="235" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-C").strokeClass} ${getZoneStatus("Zone-C").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-C").isCascaded ? "6 4" : undefined} />
                     <text x="300" y="70" className="fill-white font-extrabold text-sm tracking-wider">ZONE-C</text>
-                    {getZoneStatus("Zone-C").isCascaded && (
+                    {getZoneStatus("Zone-C").isRisk100 ? (
+                      <text x="410" y="70" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
+                    ) : getZoneStatus("Zone-C").isRisk75Plus ? (
+                      <text x="410" y="70" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
+                    ) : getZoneStatus("Zone-C").isCascaded ? (
                       <text x="440" y="70" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    )}
+                    ) : null}
                     <text x="300" y="90" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Acid Gas Valve</text>
                     <text x="300" y="125" className="fill-slate-300 font-mono text-[10px]">
                       H2S: {zoneGasData["Zone-C"]?.["H2S"] !== undefined ? `${zoneGasData["Zone-C"]["H2S"]} ppm` : "N/A"}
@@ -1019,9 +1078,13 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="280" y="220" width="235" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-D").strokeClass} ${getZoneStatus("Zone-D").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-D").isCascaded ? "6 4" : undefined} />
                     <text x="300" y="250" className="fill-white font-extrabold text-sm tracking-wider">ZONE-D</text>
-                    {getZoneStatus("Zone-D").isCascaded && (
+                    {getZoneStatus("Zone-D").isRisk100 ? (
+                      <text x="410" y="250" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
+                    ) : getZoneStatus("Zone-D").isRisk75Plus ? (
+                      <text x="410" y="250" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
+                    ) : getZoneStatus("Zone-D").isCascaded ? (
                       <text x="440" y="250" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    )}
+                    ) : null}
                     <text x="300" y="270" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Electrical Switch</text>
                     <text x="300" y="305" className="fill-slate-300 font-mono text-[10px]">
                       CH4: {zoneGasData["Zone-D"]?.["CH4"] !== undefined ? `${zoneGasData["Zone-D"]["CH4"]} ppm` : "N/A"}
@@ -1035,9 +1098,13 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="555" y="40" width="200" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-E").strokeClass} ${getZoneStatus("Zone-E").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-E").isCascaded ? "6 4" : undefined} />
                     <text x="575" y="70" className="fill-white font-extrabold text-sm tracking-wider">ZONE-E</text>
-                    {getZoneStatus("Zone-E").isCascaded && (
+                    {getZoneStatus("Zone-E").isRisk100 ? (
+                      <text x="660" y="70" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
+                    ) : getZoneStatus("Zone-E").isRisk75Plus ? (
+                      <text x="660" y="70" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
+                    ) : getZoneStatus("Zone-E").isCascaded ? (
                       <text x="690" y="70" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    )}
+                    ) : null}
                     <text x="575" y="90" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Refinery Tank</text>
                     <text x="575" y="125" className="fill-slate-300 font-mono text-[10px]">
                       H2S: {zoneGasData["Zone-E"]?.["H2S"] !== undefined ? `${zoneGasData["Zone-E"]["H2S"]} ppm` : "N/A"}
@@ -1051,9 +1118,13 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="555" y="220" width="200" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-F").strokeClass} ${getZoneStatus("Zone-F").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-F").isCascaded ? "6 4" : undefined} />
                     <text x="575" y="250" className="fill-white font-extrabold text-sm tracking-wider">ZONE-F</text>
-                    {getZoneStatus("Zone-F").isCascaded && (
+                    {getZoneStatus("Zone-F").isRisk100 ? (
+                      <text x="660" y="250" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
+                    ) : getZoneStatus("Zone-F").isRisk75Plus ? (
+                      <text x="660" y="250" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
+                    ) : getZoneStatus("Zone-F").isCascaded ? (
                       <text x="690" y="250" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    )}
+                    ) : null}
                     <text x="575" y="270" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Routine Loading</text>
                     <text x="575" y="305" className="fill-slate-300 font-mono text-[10px]">
                       CH4: {zoneGasData["Zone-F"]?.["CH4"] !== undefined ? `${zoneGasData["Zone-F"]["CH4"]} ppm` : "N/A"}
@@ -1421,7 +1492,8 @@ export default function Dashboard() {
                     { name: "Sensor Evidence Preserved", reached: false, timestamp: null },
                     { name: "Preliminary Incident Report Drafted", reached: false, timestamp: null }
                   ]).map((step: any, sIdx: number) => {
-                    const StepIcon = [ShieldAlert, Radio, Database, FileText][sIdx];
+                    const stepIcons = [ShieldAlert, Radio, Database, FileText, AlertTriangle];
+                    const StepIcon = stepIcons[sIdx] || AlertTriangle;
                     const formattedTime = step.timestamp 
                       ? new Date(step.timestamp).toLocaleTimeString() 
                       : null;

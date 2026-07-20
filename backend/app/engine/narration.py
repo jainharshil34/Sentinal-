@@ -56,15 +56,23 @@ def generate_fallback_narration(risk_data: dict) -> dict:
         "evidence_packet": evidence_packet
     }
 
+_narration_cache = {}
+
 def generate_risk_narration(risk_data: dict) -> dict:
     """
     Translates structured risk engine outputs into natural language safety reports using Claude or Gemini.
     """
+    cache_key = json.dumps(risk_data, sort_keys=True)
+    if cache_key in _narration_cache:
+        return _narration_cache[cache_key]
+
     gemini_key = os.getenv("GEMINI_API_KEY")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
     
     if not gemini_key and not anthropic_key:
-        return generate_fallback_narration(risk_data)
+        res = generate_fallback_narration(risk_data)
+        _narration_cache[cache_key] = res
+        return res
         
     system_prompt = (
         "You are an industrial safety officer writing an explanation and a regulatory evidence packet for a safety report.\n"
@@ -112,8 +120,7 @@ def generate_risk_narration(risk_data: dict) -> dict:
                 "responseMimeType": "application/json"
             }
         }
-        try:
-            response = requests.post(url, json=payload, timeout=8)
+            response = requests.post(url, json=payload, timeout=2)
             if response.status_code == 200:
                 res_json = response.json()
                 text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -123,6 +130,7 @@ def generate_risk_narration(risk_data: dict) -> dict:
                     text = text[:-3]
                 text = text.strip()
                 parsed = json.loads(text)
+                _narration_cache[cache_key] = parsed
                 return parsed
             else:
                 print(f"Gemini API returned status {response.status_code}: {response.text}")

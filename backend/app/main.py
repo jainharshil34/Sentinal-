@@ -25,6 +25,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_first_reading_cache: dict[str, datetime] = {}
+
+@app.on_event("startup")
+def startup_prewarm():
+    """Pre-warms ML models and vector embeddings in background thread to avoid initial request latency."""
+    import threading
+    def prewarm():
+        try:
+            from app.engine.incident_agent import get_model, refresh_embeddings
+            get_model()
+            refresh_embeddings()
+            print("[SentinelGrid] ML models & vector embeddings pre-warmed successfully.")
+        except Exception as e:
+            print("[SentinelGrid] ML prewarm warning:", e)
+            
+    threading.Thread(target=prewarm, daemon=True).start()
+
 @app.post("/api/feedback/{flag_id}")
 def submit_feedback(flag_id: str, payload: FeedbackRequest, db: Session = Depends(get_db)):
     if payload.verdict not in ["Confirmed Risk", "False Alarm"]:
@@ -256,6 +273,13 @@ def inject_scenario(scenario: str = Query(..., description="Scenario key to inje
         "details": SCENARIO_OFFSETS[scenario]
     }
 
+@app.get("/api/simulation/state")
+def get_simulation_state():
+    return {
+        "status": "success",
+        "scenario": current_simulation_state.get("scenario", "normal")
+    }
+
 @app.post("/api/simulation/reset")
 def reset_simulation():
     """
@@ -336,14 +360,18 @@ def get_risk_assessment(
         info = get_shifted_offsets(scenario_key, plant_id)
         resolved_dataset = info["dataset"]
         
-        first_reading = db.query(models.GasSensorReading).filter(
-            models.GasSensorReading.dataset == resolved_dataset
-        ).order_by(models.GasSensorReading.timestamp.asc()).first()
-        
-        if not first_reading:
-            raise HTTPException(status_code=400, detail=f"No readings found for dataset {resolved_dataset}")
+        if resolved_dataset in _first_reading_cache:
+            base_time = _first_reading_cache[resolved_dataset]
+        else:
+            first_reading = db.query(models.GasSensorReading).filter(
+                models.GasSensorReading.dataset == resolved_dataset
+            ).order_by(models.GasSensorReading.timestamp.asc()).first()
             
-        base_time = first_reading.timestamp
+            if not first_reading:
+                raise HTTPException(status_code=400, detail=f"No readings found for dataset {resolved_dataset}")
+            base_time = first_reading.timestamp
+            _first_reading_cache[resolved_dataset] = base_time
+            
         start_dt = base_time + timedelta(hours=info["start"])
         end_dt = base_time + timedelta(hours=info["end"])
         dataset = resolved_dataset

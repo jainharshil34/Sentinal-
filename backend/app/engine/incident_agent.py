@@ -3,28 +3,45 @@ from datetime import datetime
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from app.data.incidents import INCIDENT_CORPUS
 
-# Global models cached in-memory
+# Global models & embedding caches
 _model = None
 _embeddings = None
 _cached_corpus = None
+_query_cache = {}
 
 def get_model():
     global _model
     if _model is None:
-        # Load local lightweight sentence transformer model
-        _model = SentenceTransformer('all-MiniLM-L6-v2')
+        try:
+            import torch
+            torch.set_num_threads(4)
+        except Exception:
+            pass
+        try:
+            _model = SentenceTransformer('all-MiniLM-L6-v2', local_files_only=True)
+        except Exception:
+            _model = SentenceTransformer('all-MiniLM-L6-v2')
     return _model
 
 _cross_encoder = None
 
 def get_cross_encoder():
     global _cross_encoder
+    if _cross_encoder is False:
+        return None
     if _cross_encoder is None:
         import socket
         orig_timeout = socket.getdefaulttimeout()
         try:
-            socket.setdefaulttimeout(15.0)
-            _cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+            socket.setdefaulttimeout(2.0)
+            try:
+                _cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2', local_files_only=True)
+            except Exception:
+                _cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        except Exception as e:
+            print(f"CrossEncoder unavailable (using fast vector similarity fallback): {e}")
+            _cross_encoder = False
+            return None
         finally:
             socket.setdefaulttimeout(orig_timeout)
     return _cross_encoder
@@ -33,9 +50,10 @@ def reset_incident_cache():
     """
     Clears the in-memory cache to force reloading from the database.
     """
-    global _embeddings, _cached_corpus
+    global _embeddings, _cached_corpus, _query_cache
     _embeddings = None
     _cached_corpus = None
+    _query_cache.clear()
 
 def get_active_corpus(db=None) -> list[dict]:
     """
@@ -83,7 +101,7 @@ def refresh_embeddings(db=None):
     corpus = get_active_corpus(db)
     texts = [r["text"] for r in corpus]
     if texts:
-        _embeddings = model.encode(texts, convert_to_numpy=True)
+        _embeddings = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False)
     else:
         _embeddings = np.array([])
     _cached_corpus = corpus
@@ -100,21 +118,23 @@ def get_cached_corpus(db=None):
         _cached_corpus = get_active_corpus(db)
     return _cached_corpus
 
+def get_query_embedding(model, query_text: str):
+    if query_text not in _query_cache:
+        emb = model.encode(query_text, convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False)
+        _query_cache[query_text] = emb
+    return _query_cache[query_text]
+
 def cosine_similarity(a, b):
-    # a: 1D query embedding, b: 2D corpus embeddings
+    # a: 1D normalized query embedding, b: 2D normalized corpus embeddings
     if b.size == 0:
         return np.array([])
-    dot = np.dot(b, a)
-    norm_a = np.linalg.norm(a)
-    norm_b = np.linalg.norm(b, axis=1)
-    norm_b = np.where(norm_b == 0, 1e-9, norm_b)
-    return dot / (norm_a * norm_b)
+    return np.dot(b, a)
 
 def query_intelligence(query_text: str, top_k: int = 5) -> list[dict]:
     """
     Incident Pattern Intelligence query engine.
     Combines:
-      - Layer A: Semantic similarity search (local sentence embedding)
+      - Layer A: Fast normalized vector similarity search
       - Layer B: Multi-Hop knowledge graph traversal (connecting shared rules/clauses)
     """
     from app.db.database import SessionLocal
@@ -126,10 +146,10 @@ def query_intelligence(query_text: str, top_k: int = 5) -> list[dict]:
         if corpus_embs.size == 0 or len(corpus) == 0:
             return []
             
-        # 1. Embed query
-        query_emb = model.encode(query_text, convert_to_numpy=True)
+        # 1. Embed query with in-memory caching
+        query_emb = get_query_embedding(model, query_text)
         
-        # 2. Compute similarity
+        # 2. Compute similarity (direct normalized dot product)
         sims = cosine_similarity(query_emb, corpus_embs)
         if sims.size == 0:
             return []
@@ -304,6 +324,8 @@ def detect_recurring_patterns() -> list[dict]:
         patterns.sort(key=lambda x: x["count"], reverse=True)
         return patterns
 
+_related_incidents_cache = {}
+
 def get_related_incidents_for_rules(triggered_rules: list[dict], top_k: int = 4) -> list[dict]:
     """
     Auto-trigger helper: takes active live triggered rules, executes graph-traversal
@@ -311,6 +333,10 @@ def get_related_incidents_for_rules(triggered_rules: list[dict], top_k: int = 4)
     """
     if not triggered_rules:
         return []
+        
+    cache_key = tuple(sorted([r.get("rule_name", "") for r in triggered_rules]))
+    if cache_key in _related_incidents_cache:
+        return _related_incidents_cache[cache_key]
         
     from app.db.database import SessionLocal
     with SessionLocal() as db:
