@@ -503,7 +503,7 @@ def generate_pattern_briefing(query_text: str, results: list[dict], db=None) -> 
     
     # 1. Try Gemini
     if gemini_key:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
         payload = {
             "contents": [
                 {
