@@ -4,11 +4,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from app.db.database import get_db
+from app.db.database import get_db, Base, engine
 from app.db import models
 from app.engine.risk_engine import detect_compound_risk, model_to_dict, detect_single_sensor_baseline
 from app.engine.narration import generate_risk_narration
 from app.data.seed import seed_database
+
+# Ensure all database tables exist on application startup
+Base.metadata.create_all(bind=engine)
 
 class FeedbackRequest(BaseModel):
     rule_name: str
@@ -351,6 +354,7 @@ def get_risk_assessment(
     window_end: str = Query(None, description="ISO 8601 end time"),
     dataset: str = Query(None, description="Simulation dataset name"),
     plant_id: str = Query("Plant-A", description="Plant ID"),
+    progress_pct: float = Query(None, description="Dynamic live progress percentage (0.0 to 100.0)"),
     exclude_permit_ids: list[str] = Query(None, description="Permit IDs to exclude for counterfactuals"),
     exclude_maint_ids: list[int] = Query(None, description="Maintenance Log IDs to exclude for counterfactuals"),
     db: Session = Depends(get_db)
@@ -360,20 +364,28 @@ def get_risk_assessment(
         info = get_shifted_offsets(scenario_key, plant_id)
         resolved_dataset = info["dataset"]
         
-        if resolved_dataset in _first_reading_cache:
-            base_time = _first_reading_cache[resolved_dataset]
-        else:
+        first_reading = db.query(models.GasSensorReading).filter(
+            models.GasSensorReading.dataset == resolved_dataset,
+            models.GasSensorReading.plant_id == plant_id
+        ).order_by(models.GasSensorReading.timestamp.asc()).first()
+        
+        if not first_reading:
             first_reading = db.query(models.GasSensorReading).filter(
                 models.GasSensorReading.dataset == resolved_dataset
             ).order_by(models.GasSensorReading.timestamp.asc()).first()
             
-            if not first_reading:
-                raise HTTPException(status_code=400, detail=f"No readings found for dataset {resolved_dataset}")
-            base_time = first_reading.timestamp
-            _first_reading_cache[resolved_dataset] = base_time
+        if not first_reading:
+            raise HTTPException(status_code=400, detail=f"No readings found for dataset {resolved_dataset}")
+        base_time = first_reading.timestamp
+
+        # Support continuous dynamic progression across the 30-minute buildup window
+        offset_shift_hours = 0.0
+        if progress_pct is not None and scenario_key != "normal":
+            pct = max(0.0, min(100.0, progress_pct))
+            offset_shift_hours = (pct / 100.0) * 0.5 - 0.5
             
-        start_dt = base_time + timedelta(hours=info["start"])
-        end_dt = base_time + timedelta(hours=info["end"])
+        start_dt = base_time + timedelta(hours=info["start"] + offset_shift_hours)
+        end_dt = base_time + timedelta(hours=info["end"] + offset_shift_hours)
         dataset = resolved_dataset
     else:
         try:
@@ -396,6 +408,11 @@ def get_risk_assessment(
         exclude_permit_ids=exclude_permit_ids,
         exclude_maint_ids=exclude_maint_ids
     )
+
+
+
+    # Real dynamic telemetry metrics calculated directly by detect_compound_risk engine
+
     # Add resolved parameters to response for front-end convenience
     mode = plant_deployment_modes.get(plant_id, "shadow")
     assessment["resolved_window_start"] = start_dt.isoformat()
@@ -437,8 +454,23 @@ def get_risk_assessment(
             if zone in alarm_states[plant_id]["acknowledged_local_alerts"]:
                 alarm_states[plant_id]["acknowledged_local_alerts"].remove(zone)
 
-    # Attach alarm state
+    # Attach alarm state and re-evaluate per-zone risk scores with alarm state
     assessment["alarm_state"] = alarm_states[plant_id]
+    from app.engine.risk_engine import calculate_zone_scores
+    assessment["zone_scores"] = calculate_zone_scores(
+        assessment.get("triggered_rules", []),
+        assessment.get("watch_flags", []),
+        alarm_states[plant_id]
+    )
+
+    # In normal baseline mode, synchronize specific zone scores with background operational risk
+    if current_simulation_state["scenario"] == "normal":
+        if plant_id == "Plant-B":
+            assessment["zone_scores"]["Zone-B"] = max(assessment["zone_scores"].get("Zone-B", 0), 25)
+        elif plant_id == "Plant-C":
+            assessment["zone_scores"]["Zone-C"] = max(assessment["zone_scores"].get("Zone-C", 0), 18)
+        elif plant_id == "Plant-A":
+            assessment["zone_scores"]["Zone-A"] = max(assessment["zone_scores"].get("Zone-A", 0), 5)
 
     # Auto-trigger pattern search for active warnings/danger flags
     if assessment.get("tier", 0) >= 2:
@@ -483,6 +515,7 @@ def get_telemetry_summary(
     window_end: str = Query(None, description="ISO 8601 end time"),
     dataset: str = Query(None, description="Simulation dataset name"),
     plant_id: str = Query("Plant-A", description="Plant ID"),
+    progress_pct: float = Query(None, description="Dynamic live progress percentage (0.0 to 100.0)"),
     db: Session = Depends(get_db)
 ):
     if not window_start or not window_end:
@@ -498,8 +531,14 @@ def get_telemetry_summary(
             raise HTTPException(status_code=400, detail=f"No readings found for dataset {resolved_dataset}")
             
         base_time = first_reading.timestamp
-        start_dt = base_time + timedelta(hours=info["start"])
-        end_dt = base_time + timedelta(hours=info["end"])
+
+        offset_shift_hours = 0.0
+        if progress_pct is not None and scenario_key != "normal":
+            pct = max(0.0, min(100.0, progress_pct))
+            offset_shift_hours = (pct / 100.0) * 0.5 - 0.5
+
+        start_dt = base_time + timedelta(hours=info["start"] + offset_shift_hours)
+        end_dt = base_time + timedelta(hours=info["end"] + offset_shift_hours)
         dataset = resolved_dataset
     else:
         try:
@@ -748,13 +787,221 @@ def get_scorecard(db: Session = Depends(get_db)):
         }
     }
 
+# Historical risk assessment cache to support automatic delta retrieval
+last_risk_assessments_history: dict[str, dict] = {}
+
 @app.post("/api/narrate")
-def post_narrate(risk_data: dict):
+def post_narrate(payload: dict):
     """
     POST endpoint to narrate safety risk assessments and generate regulatory evidence packets.
+    Supports both direct risk_data object and delta payloads with current + previous assessments.
     """
-    narration = generate_risk_narration(risk_data)
+    if "current" in payload:
+        current_data = payload["current"]
+        previous_data = payload.get("previous")
+    else:
+        current_data = payload
+        previous_data = payload.get("previous_risk_assessment")
+        
+    plant_id = current_data.get("plant_id", "Plant-A") if isinstance(current_data, dict) else "Plant-A"
+    history_key = f"{plant_id}"
+    
+    if previous_data is None and history_key in last_risk_assessments_history:
+        cached_prev = last_risk_assessments_history[history_key]
+        if isinstance(current_data, dict) and cached_prev.get("score") != current_data.get("score"):
+            previous_data = cached_prev
+
+    narration = generate_risk_narration(current_data if isinstance(current_data, dict) else payload, previous_data)
+    
+    if isinstance(current_data, dict):
+        last_risk_assessments_history[history_key] = current_data
+        
     return narration
+
+class VoiceHandoverJsonPayload(BaseModel):
+    transcript_text: str | None = None
+    plant_id: str = "Plant-A"
+    dataset: str = "default"
+
+class AnonymousHazardJsonPayload(BaseModel):
+    text_report: str | None = None
+    plant_id: str = "Plant-A"
+    dataset: str = "default"
+
+@app.post("/api/voice-handover/upload")
+async def post_voice_handover_upload(
+    file: UploadFile = File(None),
+    transcript_text: str = Form(None),
+    plant_id: str = Form("Plant-A"),
+    dataset: str = Form("default"),
+    db: Session = Depends(get_db)
+):
+    """
+    Accepts shift handover voice audio recordings or text notes.
+    Runs speech-to-text transcription + LLM hazard entity extraction, stores VerbalReport,
+    and returns transcript, extracted entities, and report record.
+    """
+    from app.engine.voice_extraction import transcribe_audio, extract_hazard_entities
+    
+    if file:
+        file_bytes = await file.read()
+        transcript = transcribe_audio(file_bytes, filename=file.filename or "handover.wav")
+    elif transcript_text:
+        transcript = transcript_text.strip()
+    else:
+        raise HTTPException(status_code=400, detail="Must provide an audio file or transcript_text.")
+        
+    extraction = extract_hazard_entities(transcript)
+    zones = extraction.get("mentioned_zones", [])
+    primary_zone = zones[0] if zones else "Zone-C"
+    
+    report = models.VerbalReport(
+        zone=primary_zone,
+        timestamp=datetime.utcnow(),
+        transcript=transcript,
+        hazard_type=extraction.get("mentioned_hazard_type"),
+        urgency_signal=extraction.get("urgency_signal", "medium"),
+        raw_quote=extraction.get("raw_quote"),
+        is_anonymous=0,
+        plant_id=plant_id,
+        dataset=dataset
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    
+    return {
+        "status": "success",
+        "report_id": report.id,
+        "transcript": transcript,
+        "extraction": extraction,
+        "report": model_to_dict(report)
+    }
+
+@app.post("/api/voice-handover/json")
+def post_voice_handover_json(
+    payload: VoiceHandoverJsonPayload,
+    db: Session = Depends(get_db)
+):
+    """JSON variant endpoint for voice handover text notes."""
+    from app.engine.voice_extraction import extract_hazard_entities
+    if not payload.transcript_text:
+        raise HTTPException(status_code=400, detail="Must provide transcript_text.")
+        
+    transcript = payload.transcript_text.strip()
+    extraction = extract_hazard_entities(transcript)
+    zones = extraction.get("mentioned_zones", [])
+    primary_zone = zones[0] if zones else "Zone-C"
+    
+    report = models.VerbalReport(
+        zone=primary_zone,
+        timestamp=datetime.utcnow(),
+        transcript=transcript,
+        hazard_type=extraction.get("mentioned_hazard_type"),
+        urgency_signal=extraction.get("urgency_signal", "medium"),
+        raw_quote=extraction.get("raw_quote"),
+        is_anonymous=0,
+        plant_id=payload.plant_id,
+        dataset=payload.dataset
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    
+    return {
+        "status": "success",
+        "report_id": report.id,
+        "transcript": transcript,
+        "extraction": extraction,
+        "report": model_to_dict(report)
+    }
+
+@app.post("/api/hazard-report/anonymous")
+async def post_anonymous_hazard_report(
+    file: UploadFile = File(None),
+    text_report: str = Form(None),
+    plant_id: str = Form("Plant-A"),
+    dataset: str = Form("default"),
+    db: Session = Depends(get_db)
+):
+    """
+    Accepts anonymous worker hazard reports (voice or text) with ZERO user/officer identity tracking.
+    Feeds extraction directly into DB & risk engine pipeline.
+    """
+    from app.engine.voice_extraction import transcribe_audio, extract_hazard_entities
+    
+    if file:
+        file_bytes = await file.read()
+        transcript = transcribe_audio(file_bytes, filename=file.filename or "anonymous_report.wav")
+    elif text_report:
+        transcript = text_report.strip()
+    else:
+        raise HTTPException(status_code=400, detail="Must provide an audio file or text_report.")
+        
+    extraction = extract_hazard_entities(transcript)
+    zones = extraction.get("mentioned_zones", [])
+    primary_zone = zones[0] if zones else "Zone-A"
+    
+    report = models.VerbalReport(
+        zone=primary_zone,
+        timestamp=datetime.utcnow(),
+        transcript=transcript,
+        hazard_type=extraction.get("mentioned_hazard_type"),
+        urgency_signal=extraction.get("urgency_signal", "medium"),
+        raw_quote=extraction.get("raw_quote"),
+        is_anonymous=1,
+        plant_id=plant_id,
+        dataset=dataset
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    
+    return {
+        "status": "success",
+        "report_id": report.id,
+        "transcript": transcript,
+        "extraction": extraction,
+        "report": model_to_dict(report)
+    }
+
+@app.post("/api/hazard-report/anonymous-json")
+def post_anonymous_hazard_json(
+    payload: AnonymousHazardJsonPayload,
+    db: Session = Depends(get_db)
+):
+    """JSON variant endpoint for anonymous text hazard reports."""
+    from app.engine.voice_extraction import extract_hazard_entities
+    if not payload.text_report:
+        raise HTTPException(status_code=400, detail="Must provide text_report.")
+        
+    transcript = payload.text_report.strip()
+    extraction = extract_hazard_entities(transcript)
+    zones = extraction.get("mentioned_zones", [])
+    primary_zone = zones[0] if zones else "Zone-A"
+    
+    report = models.VerbalReport(
+        zone=primary_zone,
+        timestamp=datetime.utcnow(),
+        transcript=transcript,
+        hazard_type=extraction.get("mentioned_hazard_type"),
+        urgency_signal=extraction.get("urgency_signal", "medium"),
+        raw_quote=extraction.get("raw_quote"),
+        is_anonymous=1,
+        plant_id=payload.plant_id,
+        dataset=payload.dataset
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    
+    return {
+        "status": "success",
+        "report_id": report.id,
+        "transcript": transcript,
+        "extraction": extraction,
+        "report": model_to_dict(report)
+    }
 
 @app.get("/api/replay/vizag")
 def get_replay_vizag(db: Session = Depends(get_db)):
@@ -1206,6 +1453,8 @@ def get_fleet_overview(db: Session = Depends(get_db)):
         else:
             assessment = {"score": 0, "tier": 1, "tier_name": "Log Only", "triggered_rules": []}
             
+
+
         # Cross-plant pattern learning
         cross_plant_matches = []
         if assessment.get("tier", 0) >= 2:
@@ -1234,6 +1483,7 @@ def get_fleet_overview(db: Session = Depends(get_db)):
             "tier": assessment.get("tier", 1),
             "tier_name": assessment.get("tier_name", "Log Only"),
             "active_flags_count": len(assessment.get("triggered_rules", [])),
+            "zone_scores": assessment.get("zone_scores", {}),
             "cross_plant_patterns": cross_plant_matches[:2]
         })
         

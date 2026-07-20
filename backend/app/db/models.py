@@ -64,3 +64,18 @@ class IncidentHistory(Base):
     plant_id = Column(String(50), default="Plant-A", nullable=False, index=True)
     dataset = Column(String(50), default="default", nullable=False, index=True)
     source = Column(String(50), default="synthetic", nullable=False)
+
+class VerbalReport(Base):
+    __tablename__ = "verbal_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    zone = Column(String(50), nullable=False, index=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    transcript = Column(String(1000), nullable=False)
+    hazard_type = Column(String(50), nullable=True)  # gas/equipment/permit/other
+    urgency_signal = Column(String(50), nullable=False, default="medium")  # low/medium/high
+    raw_quote = Column(String(500), nullable=True)
+    is_anonymous = Column(Integer, default=0, nullable=False)  # 1 if anonymous, 0 if shift handover
+    plant_id = Column(String(50), default="Plant-A", nullable=False, index=True)
+    dataset = Column(String(50), default="default", nullable=False, index=True)
+

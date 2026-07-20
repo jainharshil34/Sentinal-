@@ -55,7 +55,9 @@ def get_adjusted_weights(db: Session, plant_id: str = "Plant-A") -> tuple[dict[s
         "RULE_OVERDUE_MAINTENANCE_ACTIVE_PERMIT": 2.0,
         "RULE_SILENT_SENSOR_DURING_PERMIT": 2.0,
         "RULE_PERMIT_DURING_ACTIVE_REPAIR": 2.0,
-        "RULE_MULTI_GAS_COMPOUND_TOXICITY": 3.0
+        "RULE_MULTI_GAS_COMPOUND_TOXICITY": 3.0,
+        "RULE_VERBAL_HAZARD_REPORT_ACTIVE_PERMIT": 3.0,
+        "RULE_ADJACENT_ZONE_ESCALATION": 1.0
     }
     
     adjusted_weights = {}
@@ -201,6 +203,15 @@ def detect_compound_risk(
         models.MaintenanceLog.plant_id == plant_id
     ).all()
 
+    # Verbal hazard reports logged in a trailing 12h window
+    verbal_start = end_time - timedelta(hours=12)
+    verbal_reports = db.query(models.VerbalReport).filter(
+        models.VerbalReport.timestamp >= verbal_start,
+        models.VerbalReport.timestamp <= end_time,
+        models.VerbalReport.dataset == dataset,
+        models.VerbalReport.plant_id == plant_id
+    ).all()
+
     # Apply exclusions for counterfactual simulation
     if exclude_permit_ids:
         permits = [p for p in permits if p.permit_id not in exclude_permit_ids]
@@ -318,92 +329,92 @@ def detect_compound_risk(
         if p_type == "hot_work":
             # Check CH4, H2S, CO in same/adjacent zones
             for zone in adjacent_zones:
-                # CH4 Trend check (CH4 > 10% LEL)
+                # CH4 Trend/Threshold check (CH4 >= 10.0% LEL)
                 ch4_val, ch4_inc, ch4_contrib = get_gas_trend(zone, "CH4")
-                if ch4_val > 10.0 and ch4_inc > 1.0:
+                if ch4_val >= 10.0:
                     contrib = [add_contrib(permit)] + [add_contrib(r) for r in ch4_contrib]
                     r_name = "RULE_HOT_WORK_NEAR_GAS_SPIKE"
                     triggered_rules.append({
                         "flag_id": f"{r_name}_{zone}_{int(end_time.timestamp())}",
                         "rule_name": r_name,
                         "severity": adjusted_weights.get(r_name, 3.0),
-                        "reason": f"Active hot work permit in {p_zone} correlates with rising explosive CH4 levels ({ch4_val}% LEL) in adjacent {zone}.",
+                        "reason": f"Active hot work permit in {p_zone} correlates with elevated explosive CH4 levels ({ch4_val}% LEL) in adjacent {zone}.",
                         "contributing_signals": contrib
                     })
 
-                # H2S Trend check (H2S > 5.0 ppm, aligned with ACGIH STEL)
+                # H2S Trend/Threshold check (H2S >= 5.0 ppm, aligned with ACGIH STEL)
                 h2s_val, h2s_inc, h2s_contrib = get_gas_trend(zone, "H2S")
-                if h2s_val > 5.0 and h2s_inc > 0.5:
+                if h2s_val >= 5.0:
                     contrib = [add_contrib(permit)] + [add_contrib(r) for r in h2s_contrib]
                     r_name = "RULE_HOT_WORK_NEAR_GAS_SPIKE"
                     triggered_rules.append({
                         "flag_id": f"{r_name}_{zone}_{int(end_time.timestamp())}",
                         "rule_name": r_name,
                         "severity": adjusted_weights.get(r_name, 3.0),
-                        "reason": f"Active hot work permit in {p_zone} correlates with rising toxic H2S levels ({h2s_val} ppm) in adjacent {zone}.",
+                        "reason": f"Active hot work permit in {p_zone} correlates with elevated toxic H2S levels ({h2s_val} ppm) in adjacent {zone}.",
                         "contributing_signals": contrib
                     })
 
-                # CO Trend check (CO > 25.0 ppm, aligned with ACGIH TLV-TWA)
+                # CO Trend/Threshold check (CO >= 25.0 ppm, aligned with ACGIH TLV-TWA)
                 co_val, co_inc, co_contrib = get_gas_trend(zone, "CO")
-                if co_val > 25.0 and co_inc > 2.0:
+                if co_val >= 25.0:
                     contrib = [add_contrib(permit)] + [add_contrib(r) for r in co_contrib]
                     r_name = "RULE_HOT_WORK_NEAR_GAS_SPIKE"
                     triggered_rules.append({
                         "flag_id": f"{r_name}_{zone}_{int(end_time.timestamp())}",
                         "rule_name": r_name,
                         "severity": adjusted_weights.get(r_name, 3.0),
-                        "reason": f"Active hot work permit in {p_zone} correlates with rising toxic CO levels ({co_val} ppm) in adjacent {zone}.",
+                        "reason": f"Active hot work permit in {p_zone} correlates with elevated toxic CO levels ({co_val} ppm) in adjacent {zone}.",
                         "contributing_signals": contrib
                     })
 
         # B. RULE_CONFINED_SPACE_NEAR_GAS_SPIKE (Severity: 3)
         # Aligns with safety standards:
-        # - CO: > 25.0 ppm (ACGIH TLV-TWA is 25 ppm)
-        # - H2S: > 2.0 ppm (highly toxic, above ACGIH TLV-TWA of 1 ppm)
+        # - CO: >= 25.0 ppm (ACGIH TLV-TWA is 25 ppm)
+        # - H2S: >= 2.0 ppm (highly toxic, above ACGIH TLV-TWA of 1 ppm)
         if p_type == "confined_space":
             # Check CO, H2S in same/adjacent zones
             for zone in adjacent_zones:
-                # CO Trend check (CO > 25.0 ppm)
+                # CO Trend/Threshold check (CO >= 25.0 ppm)
                 co_val, co_inc, co_contrib = get_gas_trend(zone, "CO")
-                if co_val > 25.0 and co_inc > 2.0:
+                if co_val >= 25.0:
                     contrib = [add_contrib(permit)] + [add_contrib(r) for r in co_contrib]
                     r_name = "RULE_CONFINED_SPACE_NEAR_GAS_SPIKE"
                     triggered_rules.append({
                         "flag_id": f"{r_name}_{zone}_{int(end_time.timestamp())}",
                         "rule_name": r_name,
                         "severity": adjusted_weights.get(r_name, 3.0),
-                        "reason": f"Active confined space entry in {p_zone} correlates with rising toxic CO levels ({co_val} ppm) in adjacent {zone}.",
+                        "reason": f"Active confined space entry in {p_zone} correlates with elevated toxic CO levels ({co_val} ppm) in adjacent {zone}.",
                         "contributing_signals": contrib
                     })
 
-                # H2S Trend check (H2S > 2.0 ppm)
+                # H2S Trend/Threshold check (H2S >= 2.0 ppm)
                 h2s_val, h2s_inc, h2s_contrib = get_gas_trend(zone, "H2S")
-                if h2s_val > 2.0 and h2s_inc > 0.2:
+                if h2s_val >= 2.0:
                     contrib = [add_contrib(permit)] + [add_contrib(r) for r in h2s_contrib]
                     r_name = "RULE_CONFINED_SPACE_NEAR_GAS_SPIKE"
                     triggered_rules.append({
                         "flag_id": f"{r_name}_{zone}_{int(end_time.timestamp())}",
                         "rule_name": r_name,
                         "severity": adjusted_weights.get(r_name, 3.0),
-                        "reason": f"Active confined space entry in {p_zone} correlates with rising highly toxic H2S levels ({h2s_val} ppm) in adjacent {zone}.",
+                        "reason": f"Active confined space entry in {p_zone} correlates with elevated highly toxic H2S levels ({h2s_val} ppm) in adjacent {zone}.",
                         "contributing_signals": contrib
                     })
 
         # C. RULE_ELECTRICAL_WORK_NEAR_GAS_SPIKE (Severity: 2)
         # Aligns with safety standards:
-        # - CH4: > 10.0 % LEL (spark hazards at 10% LEL)
+        # - CH4: >= 10.0 % LEL (spark hazards at 10% LEL)
         if p_type == "electrical":
             for zone in adjacent_zones:
                 ch4_val, ch4_inc, ch4_contrib = get_gas_trend(zone, "CH4")
-                if ch4_val > 10.0 and ch4_inc > 1.0:
+                if ch4_val >= 10.0:
                     contrib = [add_contrib(permit)] + [add_contrib(r) for r in ch4_contrib]
                     r_name = "RULE_ELECTRICAL_WORK_NEAR_GAS_SPIKE"
                     triggered_rules.append({
                         "flag_id": f"{r_name}_{zone}_{int(end_time.timestamp())}",
                         "rule_name": r_name,
                         "severity": adjusted_weights.get(r_name, 2.0),
-                        "reason": f"Active electrical permit in {p_zone} correlates with rising flammable CH4 levels ({ch4_val}% LEL) in adjacent {zone}.",
+                        "reason": f"Active electrical permit in {p_zone} correlates with elevated flammable CH4 levels ({ch4_val}% LEL) in adjacent {zone}.",
                         "contributing_signals": contrib
                     })
 
@@ -455,6 +466,23 @@ def detect_compound_risk(
                     "contributing_signals": contrib
                 })
 
+    # F2. RULE_VERBAL_HAZARD_REPORT_ACTIVE_PERMIT (Severity: 3)
+    for vr in verbal_reports:
+        if vr.urgency_signal in ["high", "medium"]:
+            v_zone = vr.zone
+            active_p_in_zone = [p for p in permits if p.zone == v_zone]
+            if active_p_in_zone:
+                contrib = [add_contrib(vr)] + [add_contrib(p) for p in active_p_in_zone]
+                r_name = "RULE_VERBAL_HAZARD_REPORT_ACTIVE_PERMIT"
+                quote_str = f"'{vr.raw_quote}'" if vr.raw_quote else f"'{vr.transcript}'"
+                triggered_rules.append({
+                    "flag_id": f"{r_name}_{v_zone}_{int(end_time.timestamp())}",
+                    "rule_name": r_name,
+                    "severity": adjusted_weights.get(r_name, 3.0),
+                    "reason": f"Verbal hazard report in {v_zone} ({quote_str}) correlates with active permit ({active_p_in_zone[0].permit_type}) in the same zone.",
+                    "contributing_signals": contrib
+                })
+
     # SECOND PASS — Cascading Risk Escalation (RULE_ADJACENT_ZONE_ESCALATION)
     # Find all zones that reached Tier 3 based on the primary first-pass rules.
     tier3_zones = set()
@@ -488,26 +516,30 @@ def detect_compound_risk(
                     })
 
     # G. RULE_MULTI_GAS_COMPOUND_TOXICITY (Severity: 3)
-    # Toxicological compound-exposure risk: simultaneous presence of multiple gases
-    # at sub-threshold levels poses synergistic toxicity/explosion hazards (e.g., CO + H2S combined exposure
-    # is significantly more toxic than either alone at their standalone limits).
-    # This represents real biochemical/toxicological compound-exposure risk, not just a system-correlation risk.
-    # It is a pure telemetry-only trigger and does NOT require active permits.
+    # Toxicological compound-exposure risk: OSHA/ACGIH Mixture Exposure Hazard Index formula:
+    # HI = sum(C_i / TLV_i) where TLV: CH4=10.0% LEL, H2S=5.0 ppm, CO=25.0 ppm.
+    # Simultaneous presence of multiple sub-threshold gases presents synergistic toxicity/explosion danger.
     for zone in ["Zone-A", "Zone-B", "Zone-C", "Zone-D", "Zone-E", "Zone-F"]:
         ch4_val, _, ch4_contrib = get_gas_trend(zone, "CH4")
         h2s_val, _, h2s_contrib = get_gas_trend(zone, "H2S")
         co_val, _, co_contrib = get_gas_trend(zone, "CO")
         
+        # Calculate OSHA/ACGIH Mixture Exposure Hazard Index
+        ch4_frac = ch4_val / 10.0
+        h2s_frac = h2s_val / 5.0
+        co_frac = co_val / 25.0
+        hazard_index = round(ch4_frac + h2s_frac + co_frac, 2)
+        
         elevated_gases = []
         contrib_readings = []
         
-        if ch4_val > 6.0:
-            elevated_gases.append(f"CH4 ({ch4_val} ppm)")
+        if ch4_val > 6.0 or ch4_frac >= 0.3:
+            elevated_gases.append(f"CH4 ({ch4_val}% LEL)")
             contrib_readings.extend(ch4_contrib)
-        if h2s_val > 3.0:
+        if h2s_val > 3.0 or h2s_frac >= 0.3:
             elevated_gases.append(f"H2S ({h2s_val} ppm)")
             contrib_readings.extend(h2s_contrib)
-        if co_val > 15.0:
+        if co_val > 15.0 or co_frac >= 0.3:
             elevated_gases.append(f"CO ({co_val} ppm)")
             contrib_readings.extend(co_contrib)
             
@@ -522,7 +554,7 @@ def detect_compound_risk(
                 "flag_id": f"{r_name}_{zone}_{int(end_time.timestamp())}",
                 "rule_name": r_name,
                 "severity": adjusted_weights.get(r_name, 3.0),
-                "reason": f"Simultaneous elevated toxic gases detected in {zone}: {', '.join(elevated_gases)}. Combined toxic/flammable exposure poses synergistic danger.",
+                "reason": f"Simultaneous elevated gases detected in {zone}: {', '.join(elevated_gases)} (OSHA Hazard Index HI={hazard_index}). Synergistic toxic/flammable compound exposure.",
                 "contributing_signals": contrib
             })
 
@@ -558,6 +590,7 @@ def detect_compound_risk(
 
     # LAYER 2 — Aggregate scoring
     assessment = calculate_aggregate_score(triggered_rules, unique_watch)
+    assessment["zone_scores"] = calculate_zone_scores(triggered_rules, unique_watch)
     
     # Format contributing signals (ensure unique values by ID)
     unique_contrib = []
@@ -578,12 +611,80 @@ def detect_compound_risk(
     return assessment
 
 
+def compute_watch_score(watch_flags: list[dict]) -> int:
+    """
+    Calculates dynamic watch score (15-39) based on gas proximity ratio to threshold
+    and linear regression forecast breach time.
+    """
+    if not watch_flags:
+        return 0
+    scores = []
+    for wf in watch_flags:
+        v = wf.get("current_value", 0.0)
+        t = wf.get("threshold", 1.0)
+        proximity_ratio = min(1.0, max(0.0, v / t)) if t > 0 else 0.0
+        
+        # Urgency multiplier for predicted threshold breach time
+        pred_min = wf.get("predicted_threshold_breach_minutes")
+        time_factor = 1.0
+        if pred_min is not None and pred_min > 0:
+            time_factor = max(1.0, min(1.5, 1.5 - (pred_min / 60.0)))
+            
+        wf_score = 15 + int(proximity_ratio * 10.0 * (time_factor - 1.0))
+        scores.append(wf_score)
+        
+    base_wf_score = max(scores) if scores else 15
+    multi_watch_bonus = min(10, (len(watch_flags) - 1) * 4) if len(watch_flags) > 1 else 0
+    return max(15, min(39, base_wf_score + multi_watch_bonus))
+
+
+def calculate_zone_scores(triggered_rules: list[dict], watch_flags: list[dict] = None, alarm_state: dict = None) -> dict[str, int]:
+    """
+    Calculates per-zone risk scores (0-100 scale) based on triggered rules,
+    watch flags, and alarm states for each zone.
+    """
+    zones = ["Zone-A", "Zone-B", "Zone-C", "Zone-D", "Zone-E", "Zone-F"]
+    zone_scores = {z: 0 for z in zones}
+
+    is_evac = alarm_state.get("facility_evacuation_active", False) if alarm_state else False
+    local_alerts = alarm_state.get("local_alerts_active", []) if alarm_state else []
+
+    for z in zones:
+        if is_evac or z in local_alerts:
+            zone_scores[z] = 100
+            continue
+
+        # Find rules relevant to this zone
+        z_rules = []
+        for r in triggered_rules:
+            flag_id = r.get("flag_id", "")
+            reason = r.get("reason", "")
+            signals = r.get("contributing_signals", [])
+            if f"_{z}_" in flag_id or flag_id.endswith(f"_{z}") or f"in {z}" in reason or f"adjacent {z}" in reason or any(isinstance(s, dict) and s.get("zone") == z for s in signals):
+                z_rules.append(r)
+
+        z_watch = [wf for wf in (watch_flags or []) if isinstance(wf, dict) and wf.get("zone") == z]
+
+        if z_rules:
+            base_score = sum(r.get("severity", 1) * 20 for r in z_rules)
+            rule_count = len(z_rules)
+            multiplier = 1.0 if rule_count == 1 else (1.3 if rule_count == 2 else 1.6)
+            score = min(100, int(base_score * multiplier))
+            zone_scores[z] = score
+        elif z_watch:
+            zone_scores[z] = compute_watch_score(z_watch)
+        else:
+            zone_scores[z] = 0
+
+    return zone_scores
+
+
 def calculate_aggregate_score(triggered_rules: list[dict], watch_flags: list[dict] = None) -> dict:
     """
     LAYER 2 — Aggregate scoring:
     Calculates a single risk score (0-100) and maps it to a safety tier:
-    - Tier 0 (Watch): score < 40 (usually 15), for watch flags
-    - Tier 1 (Log Only): score < 40, normal baseline
+    - Tier 0 (Watch): 15 <= score < 40, dynamic watch proximity & forecast scoring
+    - Tier 1 (Log Only): score < 40 (0 if no rules/watch)
     - Tier 2 (Dashboard Flag): 40 <= score < 75
     - Tier 3 (Escalate): score >= 75
     
@@ -591,8 +692,9 @@ def calculate_aggregate_score(triggered_rules: list[dict], watch_flags: list[dic
     """
     if not triggered_rules:
         if watch_flags:
+            score = compute_watch_score(watch_flags)
             return {
-                "score": 15,
+                "score": score,
                 "tier": 0,
                 "tier_name": "Watch",
                 "triggered_rules": []

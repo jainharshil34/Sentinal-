@@ -28,6 +28,8 @@ interface TriggeredRule {
   severity: number;
   reason: string;
   scenario_name: string;
+  narration?: string;
+  current_state_explanation?: string;
 }
 
 export default function AlertsPage() {
@@ -75,10 +77,20 @@ export default function AlertsPage() {
               params: { window_start: start, window_end: end, dataset: "default" }
             });
 
+            let scenarioNarration: any = null;
+            try {
+              const narrRes = await axios.post(`${apiUrl}/api/narrate`, res.data);
+              scenarioNarration = narrRes.data;
+            } catch (err) {
+              console.error("Failed to fetch scenario narration", err);
+            }
+
             res.data.triggered_rules.forEach((rule: any) => {
               collectedAlerts.push({
                 ...rule,
-                scenario_name: p.name
+                scenario_name: p.name,
+                narration: scenarioNarration?.explanation,
+                current_state_explanation: scenarioNarration?.current_state_explanation
               });
             });
           })
@@ -201,8 +213,19 @@ export default function AlertsPage() {
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed font-medium">
-                  {alert.reason}
+                  {alert.narration || alert.reason}
                 </p>
+                {alert.narration && (
+                  <details className="group border-t border-slate-800/40 pt-2">
+                    <summary className="list-none text-[10px] font-bold text-slate-400 hover:text-slate-300 cursor-pointer flex items-center justify-between uppercase tracking-wider select-none">
+                      <span>Raw Current-State Details</span>
+                      <span className="group-open:rotate-180 transition-transform text-[9px]">▼</span>
+                    </summary>
+                    <p className="mt-1.5 text-xs text-slate-400 leading-relaxed font-sans font-normal">
+                      {alert.current_state_explanation || alert.reason}
+                    </p>
+                  </details>
+                )}
                 <AlertExplainabilityChart apiUrl={apiUrl} />
               </div>
             </div>

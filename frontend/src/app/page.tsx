@@ -25,7 +25,11 @@ import {
   Brain,
   Download,
   Volume2,
-  VolumeX
+  VolumeX,
+  Mic,
+  Square,
+  Send,
+  MessageSquare
 } from "lucide-react";
 import { AlertExplainabilityChart } from "@/components/AlertExplainabilityChart";
 
@@ -124,6 +128,7 @@ interface RiskAssessment {
   related_incidents?: any[];
   deployment_mode?: string;
   alarm_state?: AlarmState;
+  zone_scores?: Record<string, number>;
 }
 
 interface Worker {
@@ -151,6 +156,14 @@ interface EvidencePacket {
 
 interface NarrationResponse {
   explanation: string;
+  current_state_explanation?: string;
+  delta_info?: {
+    previous_score?: number | null;
+    current_score: number;
+    score_delta: number;
+    rule_count: number;
+    co_firing_multiplier: number;
+  };
   evidence_packet: EvidencePacket | null;
 }
 
@@ -278,6 +291,7 @@ export default function Dashboard() {
 
   // API Data States
   const [riskAssessment, setRiskAssessment] = useState<RiskAssessment | null>(null);
+  const [prevRiskAssessment, setPrevRiskAssessment] = useState<RiskAssessment | null>(null);
   const [alarmState, setAlarmState] = useState<AlarmState | null>(null);
   const [telemetry, setTelemetry] = useState<TelemetrySummary | null>(null);
   
@@ -302,8 +316,130 @@ export default function Dashboard() {
   // Audio Alarm Mute State
   const [isAlarmMuted, setIsAlarmMuted] = useState<boolean>(false);
 
+  // Voice & Hazard Ingestion States
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [recordingTime, setRecordingTime] = useState<number>(0);
+  const [voiceTextNote, setVoiceTextNote] = useState<string>("");
+  const [voiceSubmitting, setVoiceSubmitting] = useState<boolean>(false);
+  const [handoverResult, setHandoverResult] = useState<any>(null);
+
+  // Anonymous Hazard Report States
+  const [showAnonModal, setShowAnonModal] = useState<boolean>(false);
+  const [anonReportText, setAnonReportText] = useState<string>("");
+  const [anonSubmitting, setAnonSubmitting] = useState<boolean>(false);
+  const [anonResult, setAnonResult] = useState<any>(null);
+
+  const mediaRecorderRef = useRef<any>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerIntervalRef = useRef<any>(null);
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  const startVoiceRecording = async () => {
+    try {
+      if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+        alert("Browser audio recording not supported on this device. Please type your note.");
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (e: any) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/wav" });
+        await handleVoiceSubmitBlob(audioBlob);
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingTime(t => t + 1);
+      }, 1000);
+    } catch (err) {
+      console.error("Microphone access denied", err);
+      alert("Could not access microphone. You can type your handover note directly into the input field.");
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      if (mediaRecorderRef.current.stream) {
+        mediaRecorderRef.current.stream.getTracks().forEach((track: any) => track.stop());
+      }
+      setIsRecording(false);
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+      }
+    }
+  };
+
+  const handleVoiceSubmitBlob = async (blob: Blob) => {
+    setVoiceSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", blob, "handover_recording.wav");
+      formData.append("plant_id", activePlant);
+      formData.append("dataset", "default");
+
+      const res = await axios.post(`${apiUrl}/api/voice-handover/upload`, formData);
+      setHandoverResult(res.data);
+      fetchLiveStatus(false);
+    } catch (err) {
+      console.error("Voice handover submission failed", err);
+    } finally {
+      setVoiceSubmitting(false);
+    }
+  };
+
+  const handleTextHandoverSubmit = async () => {
+    if (!voiceTextNote.trim()) return;
+    setVoiceSubmitting(true);
+    try {
+      const res = await axios.post(`${apiUrl}/api/voice-handover/json`, {
+        transcript_text: voiceTextNote,
+        plant_id: activePlant,
+        dataset: "default"
+      });
+      setHandoverResult(res.data);
+      setVoiceTextNote("");
+      fetchLiveStatus(false);
+    } catch (err) {
+      console.error("Text handover submission failed", err);
+    } finally {
+      setVoiceSubmitting(false);
+    }
+  };
+
+  const handleAnonHazardSubmit = async () => {
+    if (!anonReportText.trim()) return;
+    setAnonSubmitting(true);
+    try {
+      const res = await axios.post(`${apiUrl}/api/hazard-report/anonymous-json`, {
+        text_report: anonReportText,
+        plant_id: activePlant,
+        dataset: "default"
+      });
+      setAnonResult(res.data);
+      setAnonReportText("");
+      fetchLiveStatus(false);
+      setTimeout(() => {
+        setShowAnonModal(false);
+        setAnonResult(null);
+      }, 3000);
+    } catch (err) {
+      console.error("Anonymous hazard report submission failed", err);
+    } finally {
+      setAnonSubmitting(false);
+    }
+  };
 
   const submitFeedback = async (flagId: string | undefined, ruleName: string, verdict: string) => {
     if (!flagId) return;
@@ -379,7 +515,12 @@ export default function Dashboard() {
       const riskRes = await axios.get<RiskAssessment>(`${apiUrl}/api/risk-assessment`, {
         params: { plant_id: activePlant }
       });
-      setRiskAssessment(riskRes.data);
+      setRiskAssessment((prev) => {
+        if (prev && prev.score !== riskRes.data.score) {
+          setPrevRiskAssessment(prev);
+        }
+        return riskRes.data;
+      });
       if (riskRes.data.alarm_state) {
         setAlarmState(riskRes.data.alarm_state);
       } else {
@@ -433,7 +574,10 @@ export default function Dashboard() {
     const fetchNarration = async () => {
       setNarrating(true);
       try {
-        const res = await axios.post<NarrationResponse>(`${apiUrl}/api/narrate`, riskAssessment);
+        const res = await axios.post<NarrationResponse>(`${apiUrl}/api/narrate`, {
+          current: riskAssessment,
+          previous: prevRiskAssessment
+        });
         setNarration(res.data);
       } catch (err) {
         console.error("Failed to fetch LLM safety narration", err);
@@ -444,7 +588,7 @@ export default function Dashboard() {
     };
 
     fetchNarration();
-  }, [riskAssessment]);
+  }, [riskAssessment, prevRiskAssessment]);
 
   // Poll emergency response protocol state when in Tier 3
   useEffect(() => {
@@ -548,121 +692,94 @@ export default function Dashboard() {
     }
   };
 
-  // Helper to determine safety tier for a specific zone based on active triggered rules and watch flags
-  const getZoneStatus = useCallback((zoneName: string): { tier: number; isRisk100: boolean; isRisk75Plus: boolean; colorClass: string; strokeClass: string; fillClass: string; isCascaded: boolean } => {
-    const isEvacActive = alarmState?.facility_evacuation_active || false;
-    const isLocalActive = alarmState?.local_alerts_active?.includes(zoneName) || false;
+  // Helper: get per-zone risk score from the backend zone_scores map
+  const getZoneRiskScore = useCallback((zoneName: string): number => {
+    return riskAssessment?.zone_scores?.[zoneName] ?? 0;
+  }, [riskAssessment]);
+
+  // Helper to determine safety tier for a specific zone based on per-zone risk scores from backend
+  const getZoneStatus = useCallback((zoneName: string): { tier: number; isRisk100: boolean; isRisk75Plus: boolean; colorClass: string; strokeClass: string; fillClass: string; isCascaded: boolean; zoneScore: number } => {
+    const score = getZoneRiskScore(zoneName);
 
     const zoneRules = riskAssessment ? riskAssessment.triggered_rules.filter(rule => 
       rule.reason.includes(zoneName) || 
       rule.contributing_signals.some((sig: any) => sig.zone === zoneName)
     ) : [];
+    const hasCascadeRule = zoneRules.some(r => r.rule_name === "RULE_ADJACENT_ZONE_ESCALATION");
 
-    const hasMaxSeverity = zoneRules.some(r => r.severity === 3);
-    const isZoneRisk100 = isEvacActive || isLocalActive || hasMaxSeverity || (riskAssessment?.score === 100 && zoneRules.length > 0);
-
-    if (isZoneRisk100) {
+    // 1. RISK >= 75 / CRITICAL -> BLINK RED
+    if (score >= 75) {
       return { 
         tier: 3, 
-        isRisk100: true,
+        isRisk100: score >= 100,
         isRisk75Plus: true,
         colorClass: "text-rose-500 font-bold font-black animate-pulse", 
         strokeClass: "stroke-rose-500 animate-[pulse_0.6s_infinite] stroke-[4px]", 
         fillClass: "fill-rose-600/50 animate-[pulse_0.6s_infinite] hover:fill-rose-600/70",
-        isCascaded: false 
+        isCascaded: false,
+        zoneScore: score
       };
     }
 
-    if (!riskAssessment) return { tier: 1, isRisk100: false, isRisk75Plus: false, colorClass: "text-emerald-400", strokeClass: "stroke-emerald-500/40", fillClass: "fill-emerald-500/10", isCascaded: false };
-
-    const isZoneRisk75Plus = (riskAssessment.score >= 75 && zoneRules.length > 0) || zoneRules.some(r => r.severity >= 2);
-
-    if (zoneRules.length === 0) {
-      // Check if there are watch flags for this zone
-      const zoneWatchFlags = (riskAssessment.watch_flags || []).filter(wf => wf.zone === zoneName);
-      if (zoneWatchFlags.length > 0) {
-        return {
-          tier: 0,
-          isRisk100: false,
-          isRisk75Plus: false,
-          colorClass: "text-sky-400 font-bold",
-          strokeClass: "stroke-sky-500 animate-[pulse_2s_infinite] stroke-2",
-          fillClass: "fill-sky-500/10 hover:fill-sky-500/20",
-          isCascaded: false
-        };
-      }
+    // 2. RISK 40-74 / ELEVATED -> BLINK YELLOW
+    if (score >= 40) {
       return { 
-        tier: 1, 
+        tier: 2, 
         isRisk100: false,
         isRisk75Plus: false,
-        colorClass: "text-emerald-400", 
-        strokeClass: "stroke-emerald-500/40", 
-        fillClass: "fill-emerald-500/10 hover:fill-emerald-500/20",
-        isCascaded: false 
-      };
-    }
-
-    const hasCascadeRule = zoneRules.some(rule => rule.rule_name === "RULE_ADJACENT_ZONE_ESCALATION");
-    
-    if (isZoneRisk75Plus && !hasCascadeRule) {
-      return { 
-        tier: 2, 
-        isRisk100: false,
-        isRisk75Plus: true,
         colorClass: "text-amber-400 font-bold animate-pulse", 
-        strokeClass: "stroke-amber-400 animate-[pulse_1s_infinite] stroke-[3px]", 
+        strokeClass: "stroke-amber-400 animate-[pulse_1s_infinite] stroke-[3.5px]", 
         fillClass: "fill-amber-500/40 animate-[pulse_1s_infinite] hover:fill-amber-500/60",
-        isCascaded: false 
+        isCascaded: hasCascadeRule,
+        zoneScore: score
       };
     }
 
-    if (hasCascadeRule) {
+    // 3. RISK 1-39 / WATCH (sky blue)
+    if (score > 0) {
       return { 
-        tier: 2, 
+        tier: 0, 
         isRisk100: false,
         isRisk75Plus: false,
         colorClass: "text-sky-400 font-bold", 
-        strokeClass: "stroke-sky-500 stroke-2 animate-[pulse_3s_infinite]", 
-        fillClass: "fill-sky-500/5 hover:fill-sky-500/10",
-        isCascaded: true
-      };
-    } else {
-      return { 
-        tier: 2, 
-        isRisk100: false,
-        isRisk75Plus: false,
-        colorClass: "text-amber-500 font-bold", 
-        strokeClass: "stroke-amber-500 stroke-2", 
-        fillClass: "fill-amber-500/20 hover:fill-amber-500/30",
-        isCascaded: false 
+        strokeClass: "stroke-sky-500 stroke-2 animate-[pulse_2.5s_infinite]", 
+        fillClass: "fill-sky-500/10 hover:fill-sky-500/20",
+        isCascaded: hasCascadeRule,
+        zoneScore: score
       };
     }
-  }, [alarmState, riskAssessment]);
+
+    // 4. NOMINAL SAFE (score 0)
+    return { 
+      tier: 1, 
+      isRisk100: false,
+      isRisk75Plus: false,
+      colorClass: "text-emerald-400", 
+      strokeClass: "stroke-emerald-500/40", 
+      fillClass: "fill-emerald-500/10 hover:fill-emerald-500/20",
+      isCascaded: false,
+      zoneScore: 0
+    };
+  }, [riskAssessment, getZoneRiskScore]);
 
   const getGlowScore = useCallback((zoneName: string): number => {
-    const status = getZoneStatus(zoneName);
-    let baseScore = 5;
-    if (status.tier === 3) baseScore = 90;
-    else if (status.tier === 2) baseScore = status.isCascaded ? 45 : 65;
-    else if (status.tier === 0) baseScore = 25;
+    // Use exact zone score from backend, with spatial bleed from neighbors
+    const score = getZoneRiskScore(zoneName);
+    const baseScore = Math.max(5, score);
     
-    // Check neighbors for higher tier
+    // Check neighbors for higher scores
     const adjacentZones = ADJACENCY_MAP[zoneName] || [];
     let maxNeighborScore = 0;
     adjacentZones.forEach(neighbor => {
       if (neighbor !== zoneName) {
-        const nStatus = getZoneStatus(neighbor);
-        let nScore = 5;
-        if (nStatus.tier === 3) nScore = 90;
-        else if (nStatus.tier === 2) nScore = nStatus.isCascaded ? 45 : 65;
-        else if (nStatus.tier === 0) nScore = 25;
+        const nScore = getZoneRiskScore(neighbor);
         maxNeighborScore = Math.max(maxNeighborScore, nScore);
       }
     });
     
     // Return local score, or 50% of the highest neighbor score (simulating spatial bleed)
     return Math.max(baseScore, maxNeighborScore * 0.5);
-  }, [getZoneStatus]);
+  }, [getZoneRiskScore]);
 
   // Geospatial heatmap layer state & memoized heat sources
   const [heatmapLayer, setHeatmapLayer] = useState<"risk" | "workers" | "off">("risk");
@@ -682,15 +799,11 @@ export default function Dashboard() {
       });
     } else if (heatmapLayer === "workers") {
       return workers.map((worker) => {
-        const status = getZoneStatus(worker.zone);
-        let weight = 15; // default low
-        if (status.tier === 3) {
-          weight = 95;
-        } else if (status.tier === 2) {
-          weight = 65; // tier 2: 55-70
-        } else if (status.tier === 0) {
-          weight = 30; // tier 0 watch
-        }
+        const zScore = getZoneRiskScore(worker.zone);
+        let weight = 15;
+        if (zScore >= 75) weight = 95;
+        else if (zScore >= 40) weight = 65;
+        else if (zScore > 0) weight = 30;
         return {
           id: worker.id,
           x: worker.x,
@@ -701,7 +814,7 @@ export default function Dashboard() {
       });
     }
     return [];
-  }, [heatmapLayer, workers, getGlowScore, getZoneStatus]);
+  }, [heatmapLayer, workers, getGlowScore, getZoneRiskScore]);
 
 
   // Group latest gas readings per zone
@@ -917,6 +1030,151 @@ export default function Dashboard() {
         </p>
       </div>
 
+      {/* Voice Shift Handover & Anonymous Hazard Ingestion Bar */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Supervisor Shift Handover Voice Recording Box */}
+        <div className="md:col-span-2 p-4 bg-slate-900/60 rounded-2xl border border-indigo-500/25 space-y-3 relative overflow-hidden">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Mic className="h-4.5 w-4.5 text-indigo-400" />
+              <span className="text-xs font-black uppercase tracking-wider text-slate-200">
+                Shift Supervisor Voice Handover Ingestion
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-500 font-mono">Whisper STT + LLM Entity Extraction</span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            {/* Record Button */}
+            {!isRecording ? (
+              <button
+                onClick={startVoiceRecording}
+                disabled={voiceSubmitting}
+                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-md shadow-indigo-950 shrink-0 cursor-pointer"
+              >
+                <Mic className="h-4 w-4" />
+                <span>Record Voice Handover</span>
+              </button>
+            ) : (
+              <button
+                onClick={stopVoiceRecording}
+                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 animate-pulse shrink-0 cursor-pointer"
+              >
+                <Square className="h-4 w-4" />
+                <span>Stop & Submit ({recordingTime}s)</span>
+              </button>
+            )}
+
+            {/* Text Handover Input */}
+            <div className="flex-1 flex gap-2 w-full">
+              <input
+                type="text"
+                value={voiceTextNote}
+                onChange={(e) => setVoiceTextNote(e.target.value)}
+                placeholder="Or type shift handover note (e.g. 'Valve acting up near Zone-C')..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                onKeyDown={(e) => e.key === "Enter" && handleTextHandoverSubmit()}
+              />
+              <button
+                onClick={handleTextHandoverSubmit}
+                disabled={voiceSubmitting || !voiceTextNote.trim()}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                {voiceSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                <span>Submit</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Handover Result Feedback */}
+          {handoverResult && (
+            <div className="p-3 bg-slate-950 rounded-xl border border-indigo-500/20 text-xs space-y-1">
+              <div className="flex items-center justify-between text-[10px] text-indigo-400 font-extrabold uppercase">
+                <span>✓ Handover Processed & Extracted</span>
+                <span>Urgency: {handoverResult.extraction?.urgency_signal?.toUpperCase()}</span>
+              </div>
+              <p className="text-slate-300 font-mono text-[11px]">"{handoverResult.transcript}"</p>
+              {handoverResult.extraction?.raw_quote && (
+                <p className="text-indigo-300 italic text-[10px]">
+                  Extracted Quote: "{handoverResult.extraction.raw_quote}" ({handoverResult.extraction.mentioned_zones?.join(", ")})
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Anonymous Worker Hazard Report Box */}
+        <div className="p-4 bg-slate-900/60 rounded-2xl border border-amber-500/25 flex flex-col justify-between space-y-3">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="h-4.5 w-4.5 text-amber-400" />
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wider text-slate-200">
+                Anonymous Hazard Report
+              </h3>
+              <p className="text-[10px] text-slate-400">Zero-identity tracking hazard reporting</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowAnonModal(true)}
+            className="w-full py-2.5 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <ShieldAlert className="h-4 w-4" />
+            <span>Submit Anonymous Report</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Anonymous Hazard Modal Dialog */}
+      {showAnonModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <ShieldAlert className="h-5 w-5 text-amber-400" />
+                Anonymous Safety Hazard Report
+              </h3>
+              <button
+                onClick={() => setShowAnonModal(false)}
+                className="text-slate-500 hover:text-slate-300 text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              No officer or user identity is attached to this report. Describe any observed gas leaks, equipment vibrations, or safety breaches.
+            </p>
+            <textarea
+              value={anonReportText}
+              onChange={(e) => setAnonReportText(e.target.value)}
+              placeholder="e.g. Methane smell near Zone-D electrical breaker box..."
+              rows={4}
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+            />
+            {anonResult && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs rounded-xl font-medium">
+                ✓ Report submitted anonymously! Extracted quote: "{anonResult.extraction?.raw_quote || anonResult.transcript}"
+              </div>
+            )}
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowAnonModal(false)}
+                className="flex-1 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAnonHazardSubmit}
+                disabled={anonSubmitting || !anonReportText.trim()}
+                className="flex-1 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-slate-950 font-black rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {anonSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                <span>Submit Anonymous</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl text-sm font-semibold flex items-center gap-2">
           <XCircle className="h-5 w-5 shrink-0" />
@@ -1018,13 +1276,15 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="40" y="40" width="200" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-A").strokeClass} ${getZoneStatus("Zone-A").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-A").isCascaded ? "6 4" : undefined} />
                     <text x="60" y="70" className="fill-white font-extrabold text-sm tracking-wider">ZONE-A</text>
-                    {getZoneStatus("Zone-A").isRisk100 ? (
-                      <text x="140" y="70" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
-                    ) : getZoneStatus("Zone-A").isRisk75Plus ? (
-                      <text x="140" y="70" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
-                    ) : getZoneStatus("Zone-A").isCascaded ? (
-                      <text x="170" y="70" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    ) : null}
+                    {getZoneStatus("Zone-A").zoneScore >= 75 ? (
+                      <text x="140" y="70" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK {getZoneStatus("Zone-A").zoneScore}</text>
+                    ) : getZoneStatus("Zone-A").zoneScore >= 40 ? (
+                      <text x="140" y="70" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK {getZoneStatus("Zone-A").zoneScore}</text>
+                    ) : getZoneStatus("Zone-A").zoneScore > 0 ? (
+                      <text x="140" y="70" className="fill-sky-400 font-black text-[9px] tracking-wider animate-pulse font-mono">⚡ RISK {getZoneStatus("Zone-A").zoneScore}</text>
+                    ) : (
+                      <text x="140" y="70" className="fill-emerald-400 font-bold text-[9px] tracking-wider font-mono">✓ SAFE</text>
+                    )}
                     <text x="60" y="90" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Ventilation Hub</text>
                     <text x="60" y="125" className="fill-slate-300 font-mono text-[10px]">
                       CH4: {zoneGasData["Zone-A"]?.["CH4"] !== undefined ? `${zoneGasData["Zone-A"]["CH4"]} ppm` : "N/A"}
@@ -1038,13 +1298,15 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="40" y="220" width="200" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-B").strokeClass} ${getZoneStatus("Zone-B").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-B").isCascaded ? "6 4" : undefined} />
                     <text x="60" y="250" className="fill-white font-extrabold text-sm tracking-wider">ZONE-B</text>
-                    {getZoneStatus("Zone-B").isRisk100 ? (
-                      <text x="140" y="250" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
-                    ) : getZoneStatus("Zone-B").isRisk75Plus ? (
-                      <text x="140" y="250" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
-                    ) : getZoneStatus("Zone-B").isCascaded ? (
-                      <text x="170" y="250" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    ) : null}
+                    {getZoneStatus("Zone-B").zoneScore >= 75 ? (
+                      <text x="140" y="250" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK {getZoneStatus("Zone-B").zoneScore}</text>
+                    ) : getZoneStatus("Zone-B").zoneScore >= 40 ? (
+                      <text x="140" y="250" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK {getZoneStatus("Zone-B").zoneScore}</text>
+                    ) : getZoneStatus("Zone-B").zoneScore > 0 ? (
+                      <text x="140" y="250" className="fill-sky-400 font-black text-[9px] tracking-wider animate-pulse font-mono">⚡ RISK {getZoneStatus("Zone-B").zoneScore}</text>
+                    ) : (
+                      <text x="140" y="250" className="fill-emerald-400 font-bold text-[9px] tracking-wider font-mono">✓ SAFE</text>
+                    )}
                     <text x="60" y="270" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Confined Storage</text>
                     <text x="60" y="305" className="fill-slate-300 font-mono text-[10px]">
                       CO: {zoneGasData["Zone-B"]?.["CO"] !== undefined ? `${zoneGasData["Zone-B"]["CO"]} ppm` : "N/A"}
@@ -1058,13 +1320,15 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="280" y="40" width="235" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-C").strokeClass} ${getZoneStatus("Zone-C").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-C").isCascaded ? "6 4" : undefined} />
                     <text x="300" y="70" className="fill-white font-extrabold text-sm tracking-wider">ZONE-C</text>
-                    {getZoneStatus("Zone-C").isRisk100 ? (
-                      <text x="410" y="70" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
-                    ) : getZoneStatus("Zone-C").isRisk75Plus ? (
-                      <text x="410" y="70" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
-                    ) : getZoneStatus("Zone-C").isCascaded ? (
-                      <text x="440" y="70" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    ) : null}
+                    {getZoneStatus("Zone-C").zoneScore >= 75 ? (
+                      <text x="410" y="70" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK {getZoneStatus("Zone-C").zoneScore}</text>
+                    ) : getZoneStatus("Zone-C").zoneScore >= 40 ? (
+                      <text x="410" y="70" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK {getZoneStatus("Zone-C").zoneScore}</text>
+                    ) : getZoneStatus("Zone-C").zoneScore > 0 ? (
+                      <text x="410" y="70" className="fill-sky-400 font-black text-[9px] tracking-wider animate-pulse font-mono">⚡ RISK {getZoneStatus("Zone-C").zoneScore}</text>
+                    ) : (
+                      <text x="410" y="70" className="fill-emerald-400 font-bold text-[9px] tracking-wider font-mono">✓ SAFE</text>
+                    )}
                     <text x="300" y="90" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Acid Gas Valve</text>
                     <text x="300" y="125" className="fill-slate-300 font-mono text-[10px]">
                       H2S: {zoneGasData["Zone-C"]?.["H2S"] !== undefined ? `${zoneGasData["Zone-C"]["H2S"]} ppm` : "N/A"}
@@ -1078,13 +1342,15 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="280" y="220" width="235" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-D").strokeClass} ${getZoneStatus("Zone-D").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-D").isCascaded ? "6 4" : undefined} />
                     <text x="300" y="250" className="fill-white font-extrabold text-sm tracking-wider">ZONE-D</text>
-                    {getZoneStatus("Zone-D").isRisk100 ? (
-                      <text x="410" y="250" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
-                    ) : getZoneStatus("Zone-D").isRisk75Plus ? (
-                      <text x="410" y="250" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
-                    ) : getZoneStatus("Zone-D").isCascaded ? (
-                      <text x="440" y="250" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    ) : null}
+                    {getZoneStatus("Zone-D").zoneScore >= 75 ? (
+                      <text x="410" y="250" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK {getZoneStatus("Zone-D").zoneScore}</text>
+                    ) : getZoneStatus("Zone-D").zoneScore >= 40 ? (
+                      <text x="410" y="250" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK {getZoneStatus("Zone-D").zoneScore}</text>
+                    ) : getZoneStatus("Zone-D").zoneScore > 0 ? (
+                      <text x="410" y="250" className="fill-sky-400 font-black text-[9px] tracking-wider animate-pulse font-mono">⚡ RISK {getZoneStatus("Zone-D").zoneScore}</text>
+                    ) : (
+                      <text x="410" y="250" className="fill-emerald-400 font-bold text-[9px] tracking-wider font-mono">✓ SAFE</text>
+                    )}
                     <text x="300" y="270" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Electrical Switch</text>
                     <text x="300" y="305" className="fill-slate-300 font-mono text-[10px]">
                       CH4: {zoneGasData["Zone-D"]?.["CH4"] !== undefined ? `${zoneGasData["Zone-D"]["CH4"]} ppm` : "N/A"}
@@ -1098,13 +1364,15 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="555" y="40" width="200" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-E").strokeClass} ${getZoneStatus("Zone-E").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-E").isCascaded ? "6 4" : undefined} />
                     <text x="575" y="70" className="fill-white font-extrabold text-sm tracking-wider">ZONE-E</text>
-                    {getZoneStatus("Zone-E").isRisk100 ? (
-                      <text x="660" y="70" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
-                    ) : getZoneStatus("Zone-E").isRisk75Plus ? (
-                      <text x="660" y="70" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
-                    ) : getZoneStatus("Zone-E").isCascaded ? (
-                      <text x="690" y="70" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    ) : null}
+                    {getZoneStatus("Zone-E").zoneScore >= 75 ? (
+                      <text x="660" y="70" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK {getZoneStatus("Zone-E").zoneScore}</text>
+                    ) : getZoneStatus("Zone-E").zoneScore >= 40 ? (
+                      <text x="660" y="70" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK {getZoneStatus("Zone-E").zoneScore}</text>
+                    ) : getZoneStatus("Zone-E").zoneScore > 0 ? (
+                      <text x="660" y="70" className="fill-sky-400 font-black text-[9px] tracking-wider animate-pulse font-mono">⚡ RISK {getZoneStatus("Zone-E").zoneScore}</text>
+                    ) : (
+                      <text x="660" y="70" className="fill-emerald-400 font-bold text-[9px] tracking-wider font-mono">✓ SAFE</text>
+                    )}
                     <text x="575" y="90" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Refinery Tank</text>
                     <text x="575" y="125" className="fill-slate-300 font-mono text-[10px]">
                       H2S: {zoneGasData["Zone-E"]?.["H2S"] !== undefined ? `${zoneGasData["Zone-E"]["H2S"]} ppm` : "N/A"}
@@ -1118,13 +1386,15 @@ export default function Dashboard() {
                   <g className="cursor-pointer">
                     <rect x="555" y="220" width="200" height="140" rx="8" className={`transition-all duration-500 ${getZoneStatus("Zone-F").strokeClass} ${getZoneStatus("Zone-F").fillClass}`} strokeWidth="2.5" strokeDasharray={getZoneStatus("Zone-F").isCascaded ? "6 4" : undefined} />
                     <text x="575" y="250" className="fill-white font-extrabold text-sm tracking-wider">ZONE-F</text>
-                    {getZoneStatus("Zone-F").isRisk100 ? (
-                      <text x="660" y="250" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK 100</text>
-                    ) : getZoneStatus("Zone-F").isRisk75Plus ? (
-                      <text x="660" y="250" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK &gt;75</text>
-                    ) : getZoneStatus("Zone-F").isCascaded ? (
-                      <text x="690" y="250" className="fill-sky-400 font-black text-[8px] tracking-wider animate-pulse font-mono">⚡ CASCADE</text>
-                    ) : null}
+                    {getZoneStatus("Zone-F").zoneScore >= 75 ? (
+                      <text x="660" y="250" className="fill-rose-300 font-black text-[9px] tracking-wider animate-[pulse_0.6s_infinite] font-mono">🚨 RISK {getZoneStatus("Zone-F").zoneScore}</text>
+                    ) : getZoneStatus("Zone-F").zoneScore >= 40 ? (
+                      <text x="660" y="250" className="fill-amber-300 font-black text-[9px] tracking-wider animate-[pulse_1s_infinite] font-mono">⚠️ RISK {getZoneStatus("Zone-F").zoneScore}</text>
+                    ) : getZoneStatus("Zone-F").zoneScore > 0 ? (
+                      <text x="660" y="250" className="fill-sky-400 font-black text-[9px] tracking-wider animate-pulse font-mono">⚡ RISK {getZoneStatus("Zone-F").zoneScore}</text>
+                    ) : (
+                      <text x="660" y="250" className="fill-emerald-400 font-bold text-[9px] tracking-wider font-mono">✓ SAFE</text>
+                    )}
                     <text x="575" y="270" className="fill-slate-500 font-bold text-[9px] uppercase tracking-widest">Routine Loading</text>
                     <text x="575" y="305" className="fill-slate-300 font-mono text-[10px]">
                       CH4: {zoneGasData["Zone-F"]?.["CH4"] !== undefined ? `${zoneGasData["Zone-F"]["CH4"]} ppm` : "N/A"}
@@ -1266,7 +1536,7 @@ export default function Dashboard() {
                 <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-2xl" />
                 <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-extrabold uppercase tracking-wider mb-2">
                   <Sparkles className="h-4 w-4" />
-                  Executive AI Briefing
+                  Executive AI Briefing (Delta-Aware)
                 </div>
                 {narrating ? (
                   <div className="flex items-center gap-2 text-xs text-slate-500 py-1">
@@ -1274,9 +1544,22 @@ export default function Dashboard() {
                     Generating plain-language description...
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-300 leading-relaxed font-medium">
-                    {narration?.explanation}
-                  </p>
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                      {narration?.explanation}
+                    </p>
+                    {narration?.current_state_explanation && narration.current_state_explanation !== narration.explanation && (
+                      <details className="mt-2.5 border-t border-slate-800/40 pt-2 group">
+                        <summary className="list-none text-[10px] font-bold text-slate-400 hover:text-slate-300 cursor-pointer flex items-center justify-between uppercase tracking-wider select-none">
+                          <span>Raw Current-State Details</span>
+                          <span className="group-open:rotate-180 transition-transform text-[9px]">▼</span>
+                        </summary>
+                        <p className="mt-1.5 text-xs text-slate-400 leading-relaxed font-sans font-normal">
+                          {narration.current_state_explanation}
+                        </p>
+                      </details>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -1332,6 +1615,17 @@ export default function Dashboard() {
                       <p className="text-xs text-slate-300 leading-relaxed">
                         {rule.reason}
                       </p>
+                      {rule.rule_name === "RULE_VERBAL_HAZARD_REPORT_ACTIVE_PERMIT" && (
+                        <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/30 space-y-1.5 my-2">
+                          <div className="flex items-center gap-1.5 text-indigo-400 text-[10px] font-black uppercase tracking-wider">
+                            <Volume2 className="h-3.5 w-3.5" />
+                            Shift Handover Voice Evidence (Exact Quote Citation)
+                          </div>
+                          <p className="text-xs text-indigo-200 italic font-mono bg-slate-950/70 p-2.5 rounded-lg border border-indigo-500/20">
+                            {rule.reason.includes("(") && rule.reason.includes(")") ? rule.reason.substring(rule.reason.indexOf("(")+1, rule.reason.lastIndexOf(")")) : rule.reason}
+                          </p>
+                        </div>
+                      )}
                       <AlertExplainabilityChart apiUrl={apiUrl} />
                       {/* Related Historical Incidents Accordion */}
                       {(() => {

@@ -36,6 +36,16 @@ By combining deterministic rule-based correlation (Layer 1), weighted aggregate 
 ### 6. Enterprise Business Case & Cost Avoidance
 - **Major Incident Impact vs. SaaS Cost**: Features an enterprise financial simulator comparing single catastrophic incident costs (Vizag Coke Oven replay estimate: **₹50 Crore** = ₹15Cr Fatality Compensation + ₹25Cr Shutdown + ₹10Cr Fines & Remediation) against annual SentinelGrid deployment (**₹12 Lakh / year**), demonstrating a **416x cost protection ratio**.
 
+### 7. Voice Shift-Handover & Anonymous Hazard Ingestion
+- **Browser MediaRecorder Widget**: 1-click supervisor audio note recording and worker anonymous hazard reporting on the main dashboard.
+- **Groq Whisper STT & LLM Entity Extraction**: Sub-second speech-to-text transcription via Groq Whisper API (`whisper-large-v3`) combined with structured LLM hazard entity extraction (`mentioned_zones`, `mentioned_hazard_type`, `urgency_signal`, `raw_quote`).
+- **Small-Talk Noise Filtering**: Automatically ignores non-safety small talk without generating false alarm flags.
+- **Compound Co-Firing & Quote-Citing Evidence**: Co-fires high-urgency voice hazard mentions with active permits via `RULE_VERBAL_HAZARD_REPORT_ACTIVE_PERMIT` and cites exact verbatim quotes in AI evidence packets.
+
+### 8. Delta-Aware Risk Narration & Grounded Multiplier Explanations
+- **Score Transition Tracking**: Tracks risk score deltas across polling windows (e.g. *"Risk in Zone-A increased from 41 to 83"*).
+- **Grounded Co-Firing Multipliers**: Explains disproportionate score jumps using Layer 2 co-firing multipliers ($1.0\times, 1.3\times, 1.6\times$) as the literal source of truth for WHY the score doubled non-linearly.
+
 ---
 
 ## 🛠️ Architecture & Tech Stack
@@ -74,6 +84,7 @@ SentinelGrid relies on two layers of scoring to calculate the overall zone risk 
 | `RULE_SILENT_SENSOR_DURING_PERMIT` | **2** | A gas telemetry sensor goes silent ("offline") while a permit is active in the same zone. |
 | `RULE_PERMIT_DURING_ACTIVE_REPAIR` | **2** | Active permit overlaps with ongoing equipment repairs in the same zone. |
 | `RULE_MULTI_GAS_COMPOUND_TOXICITY` | **3** | Simultaneous sub-threshold toxic gas presence (e.g. CO + H2S) creating synergistic exposure risk. |
+| `RULE_VERBAL_HAZARD_REPORT_ACTIVE_PERMIT` | **3** | High-urgency shift handover voice report or anonymous hazard mention co-occurring with active work permits in the same zone. |
 
 > [!NOTE]
 > **Threshold Alignment with Real Standards:**
@@ -97,6 +108,38 @@ $$\text{Risk Score} = \min(100, \text{Base Score} \times \text{Multiplier})$$
 *   🟢 **Tier 1 (Log Only)**: Score $< 40$. Standard operation; logs are stored in audit trails.
 *   🟡 **Tier 2 (Dashboard Flag)**: Score $40 - 74$. Highlighted on facility map; safety briefing prepared.
 *   🔴 **Tier 3 (Escalate)**: Score $\ge 75$. Imminent threat; triggers flashing visual warnings, audio sirens, and downloadable regulatory PDF evidence packets.
+
+---
+
+## 🏛️ Architectural Guardrails: Why Confidence Scoring Stays Advisory, Not Authoritative
+
+In industrial safety operations (refineries, chemical processing plants, power grids), system architecture must reflect strict regulatory auditability and zero-trust safety principles. In SentinelGrid, our machine learning confidence model operates **strictly in parallel as an advisory signal**, while the **deterministic Layer 1 & 2 rule engine retains sole authority over Risk Tiers (1 / 2 / 3)**.
+
+```text
+                  ┌────────────────────────────────────────────────────────┐
+                  │            Deterministic Risk Engine                   │
+                  │   (OISD / Factories Act Rules + Co-Firing Matrix)     │
+                  └───────────────────────────┬────────────────────────────┘
+                                              │
+                                   Determines Tier (1 / 2 / 3)
+                                      [SAFETY-CRITICAL PATH]
+                                              │
+                                              ▼
+   Telemetry ───► ─────────────────────────────────────────────────────────► Action & Evacuation
+   & Permits                                  ▲
+                                              │
+                                   Provides Historical Context
+                                    [ADVISORY / SIDE-CHANNEL]
+                                              │
+                  ┌───────────────────────────┴────────────────────────────┐
+                  │            Learned Confidence Model                    │
+                  │     ("Similar flags confirmed real risk X% of time")   │
+                  └───────────────────────────┴────────────────────────────┘
+```
+
+1. **Deterministic Authority Over Safety-Critical Tiers**: The deterministic rule engine evaluates multi-sensor telemetry, work permit overlaps, and equipment maintenance logs directly against OISD Standard 105/112 and Factories Act 1948 safety bounds. This decision boundary determines whether a facility enters a Tier 3 mandatory evacuation or local isolation protocol. Because human lives depend on this output, the evaluation path must be **100% deterministic, mathematically verifiable, and audit-ready**.
+2. **Learned Confidence as a Triage Intelligence Layer**: The learned confidence model runs alongside the deterministic path, analyzing historical incident outcome distributions to provide safety officers with contextual likelihood metrics—for example: *"Historical confidence: 88% (based on 34 past similar flags confirmed as real risks)."* This informs human officer triage without ever silently gating, suppressing, or downgrading a deterministic Tier 2 or Tier 3 alarm.
+3. **Deliberate Engineering Architecture vs. In-Line ML Pipeline**: Placing a machine learning model *in line* with the decision path—where ML confidence gates or recalculates the final risk tier (`rules → ML confidence → risk score → action`)—introduces severe liability risk. If a learned model quietly downgrades a Tier 3 explosive gas escalation due to out-of-distribution telemetry or learned bias, catastrophic failure can occur. Restricting ML to an advisory side-channel is a **deliberate architectural design choice** reflecting safety-first engineering judgment.
 
 ---
 
@@ -164,9 +207,10 @@ This launches the application with production-like services (PostgreSQL, Redis, 
     ```bash
     pip install -r requirements.txt
     ```
-4.  *(Optional)* Set up your Gemini API Key in `backend/.env`:
+4.  *(Optional)* Set up your API Keys in `backend/.env`:
     ```env
-    GEMINI_API_KEY=your_actual_api_key_here
+    GEMINI_API_KEY=your_gemini_api_key_here
+    GROQ_API_KEY=your_groq_api_key_here
     ```
 5.  Seed the database:
     ```bash
