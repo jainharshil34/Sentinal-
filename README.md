@@ -15,7 +15,7 @@ By combining deterministic rule-based correlation (Layer 1), weighted aggregate 
 ### 2. Multi-Layered Correlation & Safety Engine
 *   **Layer 1 — Deterministic Correlation Rules**: Cross-references telemetry streams to evaluate multi-factor risks (e.g., active hot work near rising combustible gas in a zone with an overdue exhaust fan check).
 *   **Layer 2 — Aggregate Risk Scoring & ML Explainability**: Calculates a dynamic Risk Index ($0\text{ to }100$) using a weighted severity model with co-firing multipliers. Includes an offline/online retrained **Logistic Regression Confidence Classifier** and per-alert **AI Explainability View** (horizontal Recharts bar charts showing top 5 feature importances in plain English).
-*   **Layer 3 — AI Translation & Regulatory Evidence PDF**: Uses Claude (via Anthropic's SDK) to translate raw structured engine outputs into human-readable safety briefings and automatically generates downloadable, formatted **Tier-3 Regulatory Evidence PDFs** (via `ReportLab`) mapped to OISD and Factories Act standards.
+*   **Layer 3 — AI Translation & Regulatory Evidence PDF**: Uses Google Gemini (via Gemini REST API) to translate raw structured engine outputs into human-readable safety briefings and automatically generates downloadable, formatted **Tier-3 Regulatory Evidence PDFs** (via `ReportLab`) mapped to OISD and Factories Act standards.
 
 ### 3. Cross-Encoder Pattern Intelligence (RAG Search)
 - **Hybrid Incident Corpus**: Merges synthetic scenarios with real-world accident records from CSB and OSHA public investigation databases.
@@ -48,14 +48,14 @@ graph TD
     D -->|Weighted Scoring & ML| E[Layer 2: Scoring & Confidence Model]
     E -->|Structured Payload| F[Layer 3: AI Translation & RAG Engine]
     F -->|Cross-Encoder Re-rank| G[SentenceTransformers Cross-Encoder]
-    F -->|Generate Briefings & PDFs| H[Anthropic Claude API & ReportLab]
+    F -->|Generate Briefings & PDFs| H[Google Gemini API & ReportLab]
     H -->|Briefing & Evidence PDF| B
     B -->|JSON / PDF Stream| A
 ```
 
 *   **Frontend**: Next.js 16 (App Router), TypeScript, Tailwind CSS v4, PostCSS, Mapbox-GL (Zone Layouts), HTML5 Canvas (Geospatial Heatmap), Recharts (Telemetry & Explainability Charts), Lucide Icons, and Axios.
 *   **Backend**: FastAPI, SQLAlchemy ORM, SQLite (local development) / PostgreSQL (production), Uvicorn, Pandas, Numpy, SentenceTransformers (`all-MiniLM-L6-v2` & `ms-marco-MiniLM-L-6-v2`), and ReportLab (PDF Engine).
-*   **AI Engine**: Anthropic Claude-3.5-Sonnet (via official SDK) with deterministic template fallbacks when API keys are absent.
+*   **AI Engine**: Google Gemini 2.0 (`gemini-2.0-flash` via REST API) with deterministic template fallbacks when API keys are absent.
 
 ---
 
@@ -164,9 +164,9 @@ This launches the application with production-like services (PostgreSQL, Redis, 
     ```bash
     pip install -r requirements.txt
     ```
-4.  *(Optional)* Set up your Anthropic API Key in `.env`:
+4.  *(Optional)* Set up your Gemini API Key in `backend/.env`:
     ```env
-    ANTHROPIC_API_KEY=your_actual_api_key_here
+    GEMINI_API_KEY=your_actual_api_key_here
     ```
 5.  Seed the database:
     ```bash
