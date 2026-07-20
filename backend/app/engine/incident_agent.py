@@ -1,6 +1,6 @@
 import numpy as np
 from datetime import datetime
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 from app.data.incidents import INCIDENT_CORPUS
 
 # Global models cached in-memory
@@ -14,6 +14,20 @@ def get_model():
         # Load local lightweight sentence transformer model
         _model = SentenceTransformer('all-MiniLM-L6-v2')
     return _model
+
+_cross_encoder = None
+
+def get_cross_encoder():
+    global _cross_encoder
+    if _cross_encoder is None:
+        import socket
+        orig_timeout = socket.getdefaulttimeout()
+        try:
+            socket.setdefaulttimeout(15.0)
+            _cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+        finally:
+            socket.setdefaulttimeout(orig_timeout)
+    return _cross_encoder
 
 def reset_incident_cache():
     """
@@ -206,7 +220,37 @@ def query_intelligence(query_text: str, top_k: int = 5) -> list[dict]:
         sorted_results = list(results_map.values())
         sorted_results.sort(key=lambda x: (x["seed_rank"], -x["score"]))
         
-        return sorted_results[:top_k]
+        # Cross-encoder re-ranking on top 8 candidates
+        candidates = sorted_results[:8]
+        other_results = sorted_results[8:]
+        
+        if candidates:
+            try:
+                cross_encoder = get_cross_encoder()
+                pairs = [(query_text, c["text"]) for c in candidates]
+                raw_scores = cross_encoder.predict(pairs)
+                
+                if isinstance(raw_scores, float):
+                    raw_scores = [raw_scores]
+                    
+                for idx, c in enumerate(candidates):
+                    raw_score = float(raw_scores[idx])
+                    ce_score = 1.0 / (1.0 + np.exp(-raw_score))
+                    
+                    if len(candidates) > 1:
+                        norm_graph = 1.0 - (idx / (len(candidates) - 1))
+                    else:
+                        norm_graph = 1.0
+                        
+                    c["score"] = 0.6 * ce_score + 0.4 * norm_graph
+                    
+                # Re-sort candidates descending by their new blended score
+                candidates.sort(key=lambda x: x["score"], reverse=True)
+            except Exception as e:
+                print(f"Cross-encoder re-ranking failed in query_intelligence: {e}")
+                
+        re_ranked_results = candidates + other_results
+        return re_ranked_results[:top_k]
 
 def detect_recurring_patterns() -> list[dict]:
     """
@@ -342,4 +386,178 @@ def get_related_incidents_for_rules(triggered_rules: list[dict], top_k: int = 4)
         sorted_results = list(results_map.values())
         # Sort by reasons count, then semantic score
         sorted_results.sort(key=lambda x: (len(x["reasons"]), x["score"]), reverse=True)
-        return sorted_results[:top_k]
+        
+        # Cross-encoder re-ranking on top 8 candidates
+        candidates = sorted_results[:8]
+        other_results = sorted_results[8:]
+        
+        if candidates:
+            try:
+                cross_encoder = get_cross_encoder()
+                query_text = " ".join([r.get("reason", "") for r in triggered_rules if r.get("reason")])
+                if not query_text:
+                    query_text = " ".join([r.get("rule_name", "") for r in triggered_rules if r.get("rule_name")])
+                    
+                pairs = [(query_text, c["text"]) for c in candidates]
+                raw_scores = cross_encoder.predict(pairs)
+                
+                if isinstance(raw_scores, float):
+                    raw_scores = [raw_scores]
+                    
+                for idx, c in enumerate(candidates):
+                    raw_score = float(raw_scores[idx])
+                    ce_score = 1.0 / (1.0 + np.exp(-raw_score))
+                    
+                    if len(candidates) > 1:
+                        norm_graph = 1.0 - (idx / (len(candidates) - 1))
+                    else:
+                        norm_graph = 1.0
+                        
+                    c["score"] = 0.6 * ce_score + 0.4 * norm_graph
+                    
+                # Re-sort candidates descending by their new blended score
+                candidates.sort(key=lambda x: x["score"], reverse=True)
+            except Exception as e:
+                print(f"Cross-encoder re-ranking failed in get_related_incidents_for_rules: {e}")
+                
+        re_ranked_results = candidates + other_results
+        return re_ranked_results[:top_k]
+
+def generate_fallback_briefing(query_text: str, results: list[dict]) -> str:
+    """
+    Deterministic safety briefing generator if Claude/Gemini APIs are unavailable.
+    """
+    if not results:
+        return "No historical incidents retrieved. SentinelGrid cannot synthesize a systemic risk pattern."
+        
+    rule_types = list(set(r.get("rule_type") for r in results if r.get("rule_type")))
+    clauses = list(set(r.get("regulatory_clause") for r in results if r.get("regulatory_clause")))
+    
+    real_count = sum(1 for r in results if r.get("source") == "real_incident")
+    synthetic_count = len(results) - real_count
+    
+    source_summary = ""
+    if real_count > 0 and synthetic_count > 0:
+        source_summary = f"{real_count} real-world (CSB/OSHA) record(s) and {synthetic_count} synthetic scenario(s)"
+    elif real_count > 0:
+        source_summary = f"{real_count} real-world (CSB/OSHA) record(s)"
+    else:
+        source_summary = f"{synthetic_count} synthetic scenario(s)"
+        
+    recommendation = "Establish robust isolation procedures and verify monitoring equipment calibration."
+    if clauses:
+        clause_list = ", ".join(clauses)
+        if any("105" in c for c in clauses):
+            recommendation = "Enforce hot work permits, clear combustible gas presence, and establish strict fire watches."
+        elif any("112" in c or "36" in c for c in clauses):
+            recommendation = "Ensure mandatory atmospheric testing before confined space entries and active ventilation."
+        elif any("37" in c or "137" in c for c in clauses):
+            recommendation = "Conduct periodic electrical checks and enforce lock-out-tag-out (LOTO) protocols."
+        clause_citation = f" under compliance guidelines ({clause_list})"
+    else:
+        clause_citation = ""
+        
+    briefing = (
+        f"SentinelGrid Analysis: The search for '{query_text}' linked {len(results)} records ({source_summary}). "
+        f"A shared pattern involves safety concerns in category {', '.join(rule_types[:2])}. "
+        f"To prevent recurrence{clause_citation}, we recommend you: {recommendation}"
+    )
+    return briefing
+
+def generate_pattern_briefing(query_text: str, results: list[dict], db=None) -> str:
+    """
+    Generates an AI-synthesized systemic risk briefing using Claude (or Gemini fallback) 
+    based on the query text and retrieved historical incidents.
+    """
+    import os
+    import json
+    import requests
+    
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    
+    if not gemini_key and not anthropic_key:
+        return generate_fallback_briefing(query_text, results)
+        
+    system_prompt = (
+        "You are an industrial safety expert. You will synthesize a short 'systemic risk briefing' paragraph "
+        "based on a query and a set of retrieved historical incidents.\n"
+        "Strict constraints:\n"
+        "1. Identify the common root-cause pattern across the retrieved incidents.\n"
+        "2. Cite which incidents are real (CSB/OSHA) vs synthetic.\n"
+        "3. Provide one specific preventive recommendation tied to their shared regulatory clause.\n"
+        "4. The entire briefing must be a single cohesive paragraph and must be strictly under 120 words."
+    )
+    
+    incidents_str = ""
+    for idx, r in enumerate(results):
+        incidents_str += (
+            f"Incident {idx+1}:\n"
+            f"  Rule Type: {r.get('rule_type')}\n"
+            f"  Regulatory Clause: {r.get('regulatory_clause')}\n"
+            f"  Description: {r.get('text')}\n"
+            f"  Source: {'real (CSB/OSHA)' if r.get('source') == 'real_incident' else 'synthetic'}\n\n"
+        )
+        
+    user_content = f"Query: {query_text}\n\nRetrieved Incidents:\n{incidents_str}"
+    
+    # 1. Try Gemini
+    if gemini_key:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": user_content
+                        }
+                    ]
+                }
+            ],
+            "systemInstruction": {
+                "parts": [
+                    {
+                        "text": system_prompt
+                    }
+                ]
+            }
+        }
+        try:
+            response = requests.post(url, json=payload, timeout=8)
+            if response.status_code == 200:
+                res_json = response.json()
+                text = res_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+                return text
+            else:
+                print(f"Gemini API returned status {response.status_code}: {response.text}")
+        except Exception as e:
+            print(f"Error calling Gemini API: {e}")
+            
+    # 2. Try Anthropic
+    if anthropic_key:
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {
+            "x-api-key": anthropic_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        }
+        payload = {
+            "model": "claude-3-5-sonnet-20241022",
+            "max_tokens": 300,
+            "system": system_prompt,
+            "messages": [
+                {"role": "user", "content": user_content}
+            ]
+        }
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=8)
+            if response.status_code == 200:
+                res_json = response.json()
+                text = res_json["content"][0]["text"].strip()
+                return text
+            else:
+                print(f"Anthropic API returned status {response.status_code}: {response.text}")
+        except Exception as e:
+            print(f"Error calling Anthropic API: {e}")
+            
+    return generate_fallback_briefing(query_text, results)

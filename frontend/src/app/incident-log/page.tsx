@@ -14,7 +14,8 @@ import {
   TrendingUp, 
   AlertTriangle,
   Info,
-  CheckCircle2
+  CheckCircle2,
+  Download
 } from "lucide-react";
 
 interface Incident {
@@ -341,9 +342,20 @@ export default function IncidentLogPage() {
                           <p className="text-slate-400 text-[11px] leading-relaxed break-words">
                             {inc.resolution_notes}
                           </p>
-                          <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-slate-500">
-                            <UserCheck className="h-3 w-3 shrink-0" />
-                            <span>By: {inc.logged_by_role}</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-slate-500">
+                              <UserCheck className="h-3 w-3 shrink-0" />
+                              <span>By: {inc.logged_by_role}</span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                window.open(`${apiUrl}/api/emergency-response/${inc.zone}/report-pdf?plant_id=Plant-A`, "_blank");
+                              }}
+                              className="text-[10px] font-extrabold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded cursor-pointer transition-colors"
+                            >
+                              <Download className="h-3 w-3" />
+                              Evidence PDF
+                            </button>
                           </div>
                         </td>
                       </tr>

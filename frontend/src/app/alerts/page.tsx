@@ -8,11 +8,10 @@ import {
   CheckCircle2, 
   Info,
   Flame,
-  Wrench,
-  FileText,
   Clock,
   ShieldAlert
 } from "lucide-react";
+import { AlertExplainabilityChart } from "@/components/AlertExplainabilityChart";
 
 interface SimulationWindow {
   start_time: string;
@@ -204,6 +203,7 @@ export default function AlertsPage() {
                 <p className="text-xs text-slate-300 leading-relaxed font-medium">
                   {alert.reason}
                 </p>
+                <AlertExplainabilityChart apiUrl={apiUrl} />
               </div>
             </div>
           ))}

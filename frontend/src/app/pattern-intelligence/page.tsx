@@ -49,6 +49,7 @@ export default function PatternIntelligence() {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<IncidentMatch[]>([]);
+  const [briefing, setBriefing] = useState<string | null>(null);
   const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [loadingPatterns, setLoadingPatterns] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -76,14 +77,18 @@ export default function PatternIntelligence() {
     if (!searchQuery.trim()) return;
     setSearching(true);
     setError(null);
+    setBriefing(null);
     try {
-      const res = await axios.post<IncidentMatch[]>(`${apiUrl}/api/incident-intelligence/query`, {
-        query: searchQuery
-      });
-      setResults(res.data);
+      const res = await axios.post<{ incidents: IncidentMatch[]; synthesized_briefing: string }>(
+        `${apiUrl}/api/incident-intelligence/query`,
+        { query: searchQuery }
+      );
+      setResults(res.data.incidents || []);
+      setBriefing(res.data.synthesized_briefing || null);
     } catch (err) {
       console.error("Query failed", err);
       setError("Failed to query incident intelligence. Make sure backend is running.");
+      setResults([]);
     } finally {
       setSearching(false);
     }
@@ -193,6 +198,18 @@ export default function PatternIntelligence() {
             {error && (
               <div className="p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-xl text-sm font-semibold">
                 {error}
+              </div>
+            )}
+
+            {!searching && briefing && (
+              <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-950/20 via-slate-900 to-slate-950 border border-indigo-500/30 shadow-xl shadow-indigo-500/5 space-y-2">
+                <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs uppercase tracking-wider">
+                  <Brain className="h-4.5 w-4.5" />
+                  AI-Synthesized Pattern Briefing
+                </div>
+                <p className="text-xs text-slate-200 leading-relaxed font-semibold">
+                  {briefing}
+                </p>
               </div>
             )}
 

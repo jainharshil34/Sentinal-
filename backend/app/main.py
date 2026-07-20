@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, Depends, Query, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, Depends, Query, HTTPException, UploadFile, File, Form, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -243,6 +243,13 @@ def inject_scenario(scenario: str = Query(..., description="Scenario key to inje
         alarm_states[p_id]["last_triggered_by_flag_id"] = None
         alarm_states[p_id]["confirmation_log"].clear()
     
+    # Reset incident agent in-memory cache on scenario switch
+    try:
+        from app.engine.incident_agent import reset_incident_cache
+        reset_incident_cache()
+    except Exception as e:
+        print("Failed to reset incident agent cache on scenario injection:", e)
+
     return {
         "status": "success",
         "injected_scenario": scenario,
@@ -543,13 +550,18 @@ class IncidentQueryRequest(BaseModel):
     query: str
 
 @app.post("/api/incident-intelligence/query")
-def post_incident_intelligence_query(req: IncidentQueryRequest):
+def post_incident_intelligence_query(req: IncidentQueryRequest, db: Session = Depends(get_db)):
     """
     POST endpoint to search past incident reports using sentence embeddings and knowledge graph traversal.
     """
-    from app.engine.incident_agent import query_intelligence
+    from app.engine.incident_agent import query_intelligence, generate_pattern_briefing
     try:
-        return query_intelligence(req.query)
+        results = query_intelligence(req.query)
+        briefing = generate_pattern_briefing(req.query, results, db)
+        return {
+            "incidents": results,
+            "synthesized_briefing": briefing
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -668,6 +680,30 @@ def get_scorecard(db: Session = Depends(get_db)):
     if len(res_adjacent["triggered_rules"]) > 0:
         false_positives += 1
 
+    # 4. Raw sensor threshold crossings vs correlated alerts surfaced
+    raw_readings = db.query(models.GasSensorReading).filter(
+        models.GasSensorReading.dataset == "default"
+    ).all()
+    raw_sensor_crossings = sum(
+        1 for r in raw_readings 
+        if (r.gas_type == "CH4" and r.reading_ppm >= 20.0) or
+           (r.gas_type == "H2S" and r.reading_ppm >= 10.0) or
+           (r.gas_type == "CO" and r.reading_ppm >= 50.0)
+    )
+    
+    # Total correlated alerts surfaced (Tier 2 and Tier 3 events)
+    correlated_alerts_surfaced = 0
+    for start_offset, end_offset in scenarios:
+        start_dt = def_start + timedelta(hours=start_offset)
+        end_dt = def_start + timedelta(hours=end_offset)
+        res_compound = detect_compound_risk(db, start_dt, end_dt, dataset="default")
+        if res_compound.get("tier", 0) >= 2:
+            correlated_alerts_surfaced += len(res_compound.get("triggered_rules", []))
+            
+    noise_reduction_pct = round(
+        ((raw_sensor_crossings - correlated_alerts_surfaced) / raw_sensor_crossings * 100.0), 1
+    ) if raw_sensor_crossings > 0 else 100.0
+
     return {
         "compound_detection_rate": compound_detection_rate,
         "baseline_detection_rate": baseline_detection_rate,
@@ -675,6 +711,9 @@ def get_scorecard(db: Session = Depends(get_db)):
         "predictive_lead_time_minutes": round(predictive_lead_time_minutes, 1),
         "evidence_traceability_rate": evidence_traceability_rate,
         "false_negative_count": false_negative_count,
+        "raw_sensor_crossings": raw_sensor_crossings,
+        "correlated_alerts_surfaced": correlated_alerts_surfaced,
+        "noise_reduction_pct": noise_reduction_pct,
         "false_positive_check": {
             "edge_cases_tested": edge_cases_tested,
             "false_positives": false_positives
@@ -897,6 +936,98 @@ def get_emergency_response(zone: str, plant_id: str = Query("Plant-A")):
         "preliminary_report": preliminary_report
     }
 
+@app.get("/api/emergency-response/{zone}/report-pdf")
+def get_emergency_response_pdf(
+    zone: str,
+    plant_id: str = Query("Plant-A", description="Plant ID"),
+    db: Session = Depends(get_db)
+):
+    key = f"{plant_id}_{zone}"
+    if plant_id == "Plant-A" and zone in active_tier3_protocols:
+        triggered_at = active_tier3_protocols[zone]
+        active_rules_source = active_tier3_rules.get(zone, [])
+    elif key in active_tier3_protocols:
+        triggered_at = active_tier3_protocols[key]
+        active_rules_source = active_tier3_rules.get(key, [])
+    else:
+        triggered_at = datetime.utcnow()
+        active_rules_source = []
+
+    scenario_key = current_simulation_state["scenario"]
+    info = get_shifted_offsets(scenario_key, plant_id)
+    resolved_dataset = info["dataset"]
+    
+    first_reading = db.query(models.GasSensorReading).filter(
+        models.GasSensorReading.dataset == resolved_dataset
+    ).order_by(models.GasSensorReading.timestamp.asc()).first()
+    
+    gas_readings_dicts = []
+    permits_dicts = []
+    
+    if first_reading:
+        base_time = first_reading.timestamp
+        start_dt = base_time + timedelta(hours=info["start"])
+        end_dt = base_time + timedelta(hours=info["end"])
+        
+        # Gas readings for zone
+        gas_readings = db.query(models.GasSensorReading).filter(
+            models.GasSensorReading.timestamp >= start_dt,
+            models.GasSensorReading.timestamp <= end_dt,
+            models.GasSensorReading.dataset == resolved_dataset,
+            models.GasSensorReading.plant_id == plant_id,
+            models.GasSensorReading.zone == zone
+        ).order_by(models.GasSensorReading.timestamp.asc()).all()
+        gas_readings_dicts = [model_to_dict(g) for g in gas_readings]
+        
+        # Active permits for zone
+        permits = db.query(models.Permit).filter(
+            models.Permit.issued_at <= end_dt,
+            ((models.Permit.closed_at == None) | (models.Permit.closed_at >= start_dt)),
+            models.Permit.dataset == resolved_dataset,
+            models.Permit.plant_id == plant_id,
+            models.Permit.zone == zone
+        ).all()
+        permits_dicts = [model_to_dict(p) for p in permits]
+
+        if not active_rules_source:
+            assessment = detect_compound_risk(db, start_dt, end_dt, dataset=resolved_dataset, plant_id=plant_id)
+            all_rules = assessment.get("triggered_rules", [])
+            active_rules_source = [r for r in all_rules if zone in r.get("reason", "") or zone in r.get("flag_id", "")]
+            if not active_rules_source:
+                active_rules_source = all_rules
+
+    mock_risk_data = {
+        "score": 100,
+        "tier": 3,
+        "tier_name": "Escalate",
+        "triggered_rules": active_rules_source
+    }
+    
+    from app.engine.narration import generate_risk_narration, generate_fallback_narration
+    try:
+        narration_result = generate_risk_narration(mock_risk_data)
+    except Exception as e:
+        print("Failed to generate narration for PDF, fallback used", e)
+        narration_result = generate_fallback_narration(mock_risk_data)
+        
+    from app.engine.pdf_generator import build_evidence_pdf
+    pdf_bytes = build_evidence_pdf(
+        zone=zone,
+        plant_id=plant_id,
+        triggered_at_str=triggered_at.isoformat() + "Z",
+        active_rules=active_rules_source,
+        gas_readings=gas_readings_dicts,
+        permits=permits_dicts,
+        narration_data=narration_result
+    )
+    
+    filename = f"Regulatory_Evidence_Packet_{plant_id}_{zone}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
 def generate_audit_summary(clause_counts):
     if not clause_counts:
         return "No compliance deviations detected during this audit period."
@@ -986,7 +1117,13 @@ def post_roi_calculator(req: RoiCalculatorInput, db: Session = Depends(get_db)):
         payback_period_months = round((saas_cost / estimated_annual_savings) * 12.0, 1)
     else:
         payback_period_months = 0.0
-        
+
+    # Vizag-scale major incident cost breakdown calculation
+    fatality_comp = 150000000.0  # ₹15 Crore (~12 casualties @ ₹1.25 Cr average compensation & medical)
+    shutdown_cost = 250000000.0  # ₹25 Crore (5 days unplanned refinery downtime @ ₹5 Cr/day)
+    regulatory_penalties = 100000000.0  # ₹10 Crore (Factories Act/OSH Code penalties, legal & environmental remediation)
+    total_vizag_incident_cost = fatality_comp + shutdown_cost + regulatory_penalties
+
     return {
         "estimated_annual_risk_exposure": round(estimated_annual_risk_exposure, 2),
         "sentinelgrid_detection_rate": detection_rate,
@@ -994,7 +1131,14 @@ def post_roi_calculator(req: RoiCalculatorInput, db: Session = Depends(get_db)):
         "estimated_annual_savings": round(estimated_annual_savings, 2),
         "net_annual_savings": round(net_savings, 2),
         "payback_period_months": payback_period_months,
-        "saas_cost_annual": saas_cost
+        "saas_cost_annual": saas_cost,
+        "vizag_incident_cost_breakdown": {
+            "fatalities_compensation": fatality_comp,
+            "unplanned_shutdown_cost": shutdown_cost,
+            "regulatory_penalty_remediation": regulatory_penalties,
+            "total_estimated_major_incident_cost": total_vizag_incident_cost,
+            "assumptions_cited": "Illustrative estimate based on ~12 casualties (₹15 Cr compensation), 5 days downtime (@ ₹5 Cr/day), and regulatory fines & cleanup under Factories Act 1948 & OSH Code 2020."
+        }
     }
 
 @app.get("/api/fleet-overview")

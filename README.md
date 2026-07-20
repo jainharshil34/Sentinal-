@@ -2,40 +2,41 @@
 
 SentinelGrid is a cutting-edge, multi-layered risk correlation engine designed for industrial plant safety. While traditional SCADA and DCS control room systems monitor individual telemetry streams in silos (waiting for static gas alarms to cross high thresholds), SentinelGrid correlates real-time **gas sensor telemetry**, active **work permits**, and **maintenance databases** to flag compound hazards hours before they escalate into incidents.
 
-By combining deterministic rule-based correlation (Layer 1), weighted aggregate risk scoring (Layer 2), and LLM-driven natural language safety translation (Layer 3), SentinelGrid provides site safety officers with predictive foresight, regulatory compliance mapping, and counterfactual simulation sandboxes.
+By combining deterministic rule-based correlation (Layer 1), weighted aggregate risk scoring and machine-learning explainability (Layer 2), and LLM-driven natural language safety translation and cross-encoder RAG (Layer 3), SentinelGrid provides site safety officers with predictive foresight, downloadable regulatory evidence packets, and counterfactual simulation sandboxes.
 
 ---
 
 ## 🚀 Key Capabilities & Features
 
-### 1. Interactive Facility Floor Plan
-- Maps real-time hazardous conditions across six distinct plant zones (`Zone-A` through `Zone-F`).
-- Highlights active risk statuses dynamically (Normal 🟢, Alert 🟡, and Danger/Escalate 🔴 with pulsing warning glows).
+### 1. Geospatial Heatmap & Floor Plan
+- **HTML5 Canvas Risk Layer**: Positioned directly under the SVG zone layout, rendering smooth HSL Gaussian intensity blobs representing dynamic gas accumulation and zone risk scores.
+- **Interactive Zone Mapping**: Maps real-time hazardous conditions across six distinct plant zones (`Zone-A` through `Zone-F`) with dynamic status indicators (Normal 🟢, Alert 🟡, and Danger/Escalate 🔴 with pulsing warning glows).
 
 ### 2. Multi-Layered Correlation & Safety Engine
 *   **Layer 1 — Deterministic Correlation Rules**: Cross-references telemetry streams to evaluate multi-factor risks (e.g., active hot work near rising combustible gas in a zone with an overdue exhaust fan check).
-*   **Layer 2 — Aggregate Risk Scoring**: Calculates a dynamic Risk Index ($0\text{ to }100$) using a weighted severity model. It applies co-firing multipliers to reflect accelerated hazard velocity when multiple conditions align.
-*   **Layer 3 — AI Translation & Briefing**: Uses Claude (via Anthropic's SDK) to translate raw structured engine outputs into human-readable safety briefings and generates regulatory compliance audit logs mapped to international standards.
+*   **Layer 2 — Aggregate Risk Scoring & ML Explainability**: Calculates a dynamic Risk Index ($0\text{ to }100$) using a weighted severity model with co-firing multipliers. Includes an offline/online retrained **Logistic Regression Confidence Classifier** and per-alert **AI Explainability View** (horizontal Recharts bar charts showing top 5 feature importances in plain English).
+*   **Layer 3 — AI Translation & Regulatory Evidence PDF**: Uses Claude (via Anthropic's SDK) to translate raw structured engine outputs into human-readable safety briefings and automatically generates downloadable, formatted **Tier-3 Regulatory Evidence PDFs** (via `ReportLab`) mapped to OISD and Factories Act standards.
 
-### 3. Counterfactual Risk Sandbox
-- Empowers safety officers to play "what-if" scenarios in real-time.
-- Allows operators to isolate specific permits or resolve overdue maintenance tasks and instantly observe the safety impact on the facility's Risk Index.
+### 3. Cross-Encoder Pattern Intelligence (RAG Search)
+- **Hybrid Incident Corpus**: Merges synthetic scenarios with real-world accident records from CSB and OSHA public investigation databases.
+- **Cross-Encoder Re-Ranking**: Uses a two-stage retrieval pipeline (`all-MiniLM-L6-v2` dense vector retrieval + `cross-encoder/ms-marco-MiniLM-L-6-v2` re-ranking) blending vector similarity with graph reasoning scores ($0.6 \times \text{cross\_encoder} + 0.4 \times \text{graph\_score}$).
+- **AI Systemic Risk Briefing**: Synthesizes top retrieved past incidents into actionable executive summaries.
 
-### 4. Replay Timeline & Historical Replay
-- Includes a side-by-side reconstruction of historical incidents (such as the *Vizag Coke Oven battery gas buildup*).
-- Directly compares legacy systems (which alarm only after fatal limits are crossed) against SentinelGrid (which flags a Tier 3 warning **155 minutes in advance**).
+### 4. Counterfactual Risk Sandbox & Incident Replay
+- **Mitigation Sandbox**: Empowers safety officers to play "what-if" scenarios in real-time by toggling active permits or resolving overdue maintenance tasks to observe instant Risk Index drops.
+- **Historical Replay**: Includes a side-by-side reconstruction of historical disasters (such as the *Vizag Coke Oven battery gas buildup*), proving SentinelGrid flags Tier 3 warnings **155 minutes in advance** compared to legacy systems.
 
-### 5. Analytical Performance Scorecard
-- Evaluates SentinelGrid's compound engine against traditional single-sensor baselines.
-- Measures key safety metrics: **Compound Detection Rate (100%)**, **Baseline Detection Rate (0%)**, **Average Warning Lead Time (155 minutes)**, and **Evidence Auditability (100%)**.
+### 5. Analytical Performance Scorecard & Alarm Fatigue Reduction
+- Measures key safety metrics across the seeded 72-hour dataset:
+  - **Compound Detection Rate**: 100% (vs. 0% for single-sensor baselines)
+  - **Average Warning Lead Time**: 155 minutes
+  - **Evidence Auditability**: 100% zone-attributed signals
+  - **Alert Noise Reduction**: **98.0% noise suppression** (393 raw single-sensor threshold crossings filtered down to 8 actionable multi-system alerts).
 
-### 6. Incident Pattern Intelligence (RAG Search)
-- **Hybrid Incident Database**: Merges 17 synthetic scenarios and 12 real-world accident records from the CSB and OSHA public investigation databases.
-- **Local RAG Search & Graph Reasoning**: Implements a local sentence-transformer embedding pipeline (`all-MiniLM-L6-v2`) for semantic search of safety files, combined with multi-hop knowledge graph reasoning to link and surface textually dissimilar incidents that share underlying regulatory clauses (e.g., OSHA 1910.146) or rules.
-- **Source Provenance Badging**: Displays styled badges (**Real Incident (CSB)** vs **Synthetic Scenario**) in the search console and incident log to prevent illustration data from being mistaken for real incident history.
+### 6. Enterprise Business Case & Cost Avoidance
+- **Major Incident Impact vs. SaaS Cost**: Features an enterprise financial simulator comparing single catastrophic incident costs (Vizag Coke Oven replay estimate: **₹50 Crore** = ₹15Cr Fatality Compensation + ₹25Cr Shutdown + ₹10Cr Fines & Remediation) against annual SentinelGrid deployment (**₹12 Lakh / year**), demonstrating a **416x cost protection ratio**.
 
 ---
-
 
 ## 🛠️ Architecture & Tech Stack
 
@@ -44,16 +45,17 @@ graph TD
     A[React / Next.js Frontend] -->|API Requests| B[FastAPI Backend]
     B -->|Query / Write| C[(SQLite/Postgres Database)]
     B -->|Evaluate Rules| D[Layer 1: Risk Engine]
-    D -->|Weighted Scoring| E[Layer 2: Scoring Engine]
-    E -->|Structured Payload| F[Layer 3: AI Translation]
-    F -->|Generate Briefings| G[Anthropic Claude API]
-    G -->|Briefing & Evidence Packet| B
-    B -->|JSON Response| A
+    D -->|Weighted Scoring & ML| E[Layer 2: Scoring & Confidence Model]
+    E -->|Structured Payload| F[Layer 3: AI Translation & RAG Engine]
+    F -->|Cross-Encoder Re-rank| G[SentenceTransformers Cross-Encoder]
+    F -->|Generate Briefings & PDFs| H[Anthropic Claude API & ReportLab]
+    H -->|Briefing & Evidence PDF| B
+    B -->|JSON / PDF Stream| A
 ```
 
-*   **Frontend**: Next.js 16 (App Router), TypeScript, Tailwind CSS v4, PostCSS, Mapbox-GL (Zone Layouts), Recharts (Telemetry Analytics), Lucide Icons, and Axios.
-*   **Backend**: FastAPI, SQLAlchemy ORM, SQLite (local development) / PostgreSQL (production), Uvicorn, Pandas, and Numpy.
-*   **AI Engine**: Anthropic Claude-3.5-Sonnet (via official SDK) with a deterministic template-driven fallback when API keys are absent.
+*   **Frontend**: Next.js 16 (App Router), TypeScript, Tailwind CSS v4, PostCSS, Mapbox-GL (Zone Layouts), HTML5 Canvas (Geospatial Heatmap), Recharts (Telemetry & Explainability Charts), Lucide Icons, and Axios.
+*   **Backend**: FastAPI, SQLAlchemy ORM, SQLite (local development) / PostgreSQL (production), Uvicorn, Pandas, Numpy, SentenceTransformers (`all-MiniLM-L6-v2` & `ms-marco-MiniLM-L-6-v2`), and ReportLab (PDF Engine).
+*   **AI Engine**: Anthropic Claude-3.5-Sonnet (via official SDK) with deterministic template fallbacks when API keys are absent.
 
 ---
 
@@ -71,13 +73,13 @@ SentinelGrid relies on two layers of scoring to calculate the overall zone risk 
 | `RULE_OVERDUE_MAINTENANCE_ACTIVE_PERMIT` | **2** | Active work permit in zone matches an overdue maintenance task in the same zone. |
 | `RULE_SILENT_SENSOR_DURING_PERMIT` | **2** | A gas telemetry sensor goes silent ("offline") while a permit is active in the same zone. |
 | `RULE_PERMIT_DURING_ACTIVE_REPAIR` | **2** | Active permit overlaps with ongoing equipment repairs in the same zone. |
+| `RULE_MULTI_GAS_COMPOUND_TOXICITY` | **3** | Simultaneous sub-threshold toxic gas presence (e.g. CO + H2S) creating synergistic exposure risk. |
 
 > [!NOTE]
 > **Threshold Alignment with Real Standards:**
-> - **Methane ($CH_4$)**: Measured in % LEL (Lower Explosive Limit) where 10% LEL matches the explosive atmosphere warnings and 20% LEL matches the high baseline alarm.
+> - **Methane ($CH_4$)**: Measured in % LEL (Lower Explosive Limit) where 10% LEL matches explosive atmosphere warnings and 20% LEL matches high baseline alarms.
 > - **Hydrogen Sulfide ($H_2S$)**: Limits align with ACGIH STEL (5 ppm), ACGIH TWA (1 ppm), and NIOSH REL Ceiling (10 ppm).
 > - **Carbon Monoxide ($CO$)**: Limits align with ACGIH TWA (25 ppm) and OSHA PEL TWA (50 ppm).
-
 
 ### Aggregate Score & Co-Firing Multiplier
 The aggregate Risk Index is calculated using the base severity of all triggered rules, adjusted by a **co-firing multiplier** to represent compound risk growth:
@@ -94,7 +96,7 @@ $$\text{Risk Score} = \min(100, \text{Base Score} \times \text{Multiplier})$$
 
 *   🟢 **Tier 1 (Log Only)**: Score $< 40$. Standard operation; logs are stored in audit trails.
 *   🟡 **Tier 2 (Dashboard Flag)**: Score $40 - 74$. Highlighted on facility map; safety briefing prepared.
-*   🔴 **Tier 3 (Escalate)**: Score $\ge 75$. Imminent threat; triggers flashing visual warnings and compiles a regulatory evidence packet.
+*   🔴 **Tier 3 (Escalate)**: Score $\ge 75$. Imminent threat; triggers flashing visual warnings, audio sirens, and downloadable regulatory PDF evidence packets.
 
 ---
 
@@ -106,21 +108,22 @@ sentinel/
 │   ├── app/
 │   │   ├── data/                 # Seed scripts, generators, and JSON fixtures
 │   │   ├── db/                   # Database configuration, models, and sessions
-│   │   ├── engine/               # Risk engine rules, scoring, and AI narration
-│   │   └── main.py               # FastAPI entry point and router endpoints
+│   │   ├── engine/               # Risk engine, confidence model, RAG cross-encoder, PDF generator
+│   │   └── main.py               # FastAPI entry point, endpoints, and PDF streaming
 │   ├── tests/                    # Backend unit and integration tests (pytest)
 │   ├── Dockerfile
-│   ├── requirements.txt          # Python dependencies
+│   ├── requirements.txt          # Python dependencies (ReportLab, SentenceTransformers, etc.)
 │   └── sentinelgrid.db           # Local SQLite database
 ├── frontend/
 │   ├── src/
-│   │   ├── app/                  # Pages: Dashboard, Replay, Scorecard, Pattern Intelligence, Compliance Audit, Incident Log
-│   │   ├── components/           # UI Elements (Sidebar, etc.)
+│   │   ├── app/                  # Pages: Dashboard, Fleet, Alerts, Pattern Intelligence, Replay, Scorecard, Business Case, etc.
+│   │   ├── components/           # UI Elements (Sidebar, RiskHeatmap, AlertExplainabilityChart)
 │   │   └── globals.css           # Tailwind configuration
 │   ├── Dockerfile
 │   ├── package.json              # Node dependencies & npm scripts
 │   └── tsconfig.json             # TypeScript configuration
 ├── docker-compose.yml            # Full-stack orchestrator (App + Postgres + Redis)
+├── data_sources.md               # Credibility matrix & cited regulatory sources
 └── DEMO_SCRIPT.md                # Click-by-click live demo script for presentations
 ```
 
@@ -161,11 +164,10 @@ This launches the application with production-like services (PostgreSQL, Redis, 
     ```bash
     pip install -r requirements.txt
     ```
-4.  *(Optional)* Set up your Anthropic API Key:
-    - Create a `.env` file in the `backend/` directory:
-      ```env
-      ANTHROPIC_API_KEY=your_actual_api_key_here
-      ```
+4.  *(Optional)* Set up your Anthropic API Key in `.env`:
+    ```env
+    ANTHROPIC_API_KEY=your_actual_api_key_here
+    ```
 5.  Seed the database:
     ```bash
     python -m app.data.seed
@@ -195,7 +197,7 @@ This launches the application with production-like services (PostgreSQL, Redis, 
 
 ## 🧪 Running Automated Tests
 
-A comprehensive suite of tests verifies the deterministic risk rules, counterfactual logic, and database state transitions.
+A comprehensive suite of tests verifies the deterministic risk rules, counterfactual logic, cross-encoder ranking, PDF generation, and database state transitions.
 
 Run the test suite from the `backend` directory using `pytest`:
 ```bash
@@ -217,8 +219,7 @@ When a Tier 3 (Escalate) incident occurs, Layer 3 automatically maps the compoun
 | **Factories Act 1948 (Section 37)** | Electrical Isolation & Spark Prevention | Controls electrical sparks in areas where explosive gases could accumulate. |
 | **OISD Standard 137** | Guidelines for Inspection of Electrical Equipment | Outlines safety audit and periodic maintenance compliance for electrical equipment in hazardous zones. |
 
-For detailed information on real cited values, CSB investigation records, and synthetic simulation components, refer to [`data_sources.md`](file:///c:/Users/Harshil%20Jain/Documents/sentinal/data_sources.md) in the project root.
-
+For detailed information on real cited values, CSB investigation records, and synthetic simulation components, refer to [`data_sources.md`](./data_sources.md) in the project root.
 
 ---
 

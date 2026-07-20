@@ -14,6 +14,14 @@ import {
   Briefcase
 } from "lucide-react";
 
+interface VizagIncidentCostBreakdown {
+  fatalities_compensation: number;
+  unplanned_shutdown_cost: number;
+  regulatory_penalty_remediation: number;
+  total_estimated_major_incident_cost: number;
+  assumptions_cited: string;
+}
+
 interface RoiResult {
   estimated_annual_risk_exposure: number;
   sentinelgrid_detection_rate: number;
@@ -22,6 +30,7 @@ interface RoiResult {
   net_annual_savings: number;
   payback_period_months: number;
   saas_cost_annual: number;
+  vizag_incident_cost_breakdown?: VizagIncidentCostBreakdown;
 }
 
 export default function BusinessCasePage() {
@@ -99,6 +108,71 @@ export default function BusinessCasePage() {
           <span>{error}</span>
         </div>
       )}
+
+      {/* Highest Impact Hero Stat Card: Vizag Incident Cost vs SentinelGrid SaaS Cost */}
+      <div className="p-7 rounded-2xl bg-gradient-to-br from-rose-950/20 via-slate-900 to-slate-950 border border-rose-500/30 shadow-2xl relative overflow-hidden group">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-rose-500/5 rounded-full blur-3xl" />
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+          <div className="space-y-2 max-w-2xl">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-rose-500/15 text-rose-400 border border-rose-500/30">
+                Major Incident Cost Avoidance
+              </span>
+              <span className="text-[10px] font-bold text-slate-400">Illustrative Enterprise Impact</span>
+            </div>
+            <h2 className="text-xl font-black text-white tracking-tight">
+              Single Major Incident Cost vs. Annual SentinelGrid Deployment
+            </h2>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Catastrophic industrial incidents (e.g. Vizag Coke Oven gas leak replay) carry massive financial liabilities. Implementing SentinelGrid provides continuous compound-risk protection for a fraction of a single incident's cost.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center gap-4 shrink-0 bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+            <div className="text-center sm:text-right">
+              <div className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider">Estimated Major Incident Cost</div>
+              <div className="text-3xl font-black text-rose-400 font-mono">
+                {result?.vizag_incident_cost_breakdown ? formatINR(result.vizag_incident_cost_breakdown.total_estimated_major_incident_cost) : "₹50.00 Crore"}
+              </div>
+            </div>
+            <div className="hidden sm:block text-slate-700 font-light text-2xl">vs</div>
+            <div className="text-center sm:text-left">
+              <div className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider">Annual SentinelGrid Cost</div>
+              <div className="text-3xl font-black text-emerald-400 font-mono">
+                {result ? formatINR(result.saas_cost_annual) : "₹12.00 Lakh"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div className="p-2.5 rounded-lg bg-slate-950/50 border border-slate-850">
+            <span className="text-[9px] font-extrabold uppercase text-slate-500 block">Fatalities Compensation</span>
+            <span className="font-mono text-slate-200 font-bold">
+              {result?.vizag_incident_cost_breakdown ? formatINR(result.vizag_incident_cost_breakdown.fatalities_compensation) : "₹15.00 Crore"}
+            </span>
+          </div>
+          <div className="p-2.5 rounded-lg bg-slate-950/50 border border-slate-850">
+            <span className="text-[9px] font-extrabold uppercase text-slate-500 block">Unplanned Shutdown (5 Days)</span>
+            <span className="font-mono text-slate-200 font-bold">
+              {result?.vizag_incident_cost_breakdown ? formatINR(result.vizag_incident_cost_breakdown.unplanned_shutdown_cost) : "₹25.00 Crore"}
+            </span>
+          </div>
+          <div className="p-2.5 rounded-lg bg-slate-950/50 border border-slate-850">
+            <span className="text-[9px] font-extrabold uppercase text-slate-500 block">Fines & Remediation</span>
+            <span className="font-mono text-slate-200 font-bold">
+              {result?.vizag_incident_cost_breakdown ? formatINR(result.vizag_incident_cost_breakdown.regulatory_penalty_remediation) : "₹10.00 Crore"}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-3 text-[10px] text-slate-400 leading-normal font-sans italic flex items-center gap-1.5">
+          <Info className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+          <span>
+            {result?.vizag_incident_cost_breakdown?.assumptions_cited || "Illustrative estimate based on ~12 casualties (₹15 Cr compensation), 5 days downtime (@ ₹5 Cr/day), and regulatory fines & cleanup under Factories Act 1948 & OSH Code 2020."}
+          </span>
+        </div>
+      </div>
 
       {/* Main Grid split: Left Inputs, Right Outputs */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import axios from "axios";
+import { RiskHeatmap, HeatmapLegend } from "@/components/RiskHeatmap";
 import { 
   Activity, 
   CheckCircle2, 
@@ -21,8 +22,10 @@ import {
   Award,
   Database,
   Radio,
-  Brain
+  Brain,
+  Download
 } from "lucide-react";
+import { AlertExplainabilityChart } from "@/components/AlertExplainabilityChart";
 
 const ZONE_CENTERS: Record<string, { x: number; y: number }> = {
   "Zone-A": { x: 140, y: 110 },
@@ -294,6 +297,7 @@ export default function Dashboard() {
   // Active Plant Deployment Mode State (shadow or live)
   const [deploymentMode, setDeploymentMode] = useState<string>("shadow");
 
+
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   const submitFeedback = async (flagId: string | undefined, ruleName: string, verdict: string) => {
@@ -518,6 +522,11 @@ export default function Dashboard() {
     }
   };
 
+  const handleDownloadPdf = (zoneName: string) => {
+    const pdfUrl = `${apiUrl}/api/emergency-response/${zoneName}/report-pdf?plant_id=${activePlant}`;
+    window.open(pdfUrl, "_blank");
+  };
+
   // Inject test scenario
   const handleInjectScenario = async (scenarioKey: string) => {
     setInjecting(true);
@@ -535,7 +544,7 @@ export default function Dashboard() {
   };
 
   // Helper to determine safety tier for a specific zone based on active triggered rules and watch flags
-  const getZoneStatus = (zoneName: string): { tier: number; colorClass: string; strokeClass: string; fillClass: string; isCascaded: boolean } => {
+  const getZoneStatus = useCallback((zoneName: string): { tier: number; colorClass: string; strokeClass: string; fillClass: string; isCascaded: boolean } => {
     if (alarmState?.facility_evacuation_active) {
       return { 
         tier: 3, 
@@ -612,9 +621,9 @@ export default function Dashboard() {
         isCascaded: false 
       };
     }
-  };
+  }, [alarmState, riskAssessment]);
 
-  const getGlowScore = (zoneName: string): number => {
+  const getGlowScore = useCallback((zoneName: string): number => {
     const status = getZoneStatus(zoneName);
     let baseScore = 5;
     if (status.tier === 3) baseScore = 90;
@@ -637,7 +646,47 @@ export default function Dashboard() {
     
     // Return local score, or 50% of the highest neighbor score (simulating spatial bleed)
     return Math.max(baseScore, maxNeighborScore * 0.5);
-  };
+  }, [getZoneStatus]);
+
+  // Geospatial heatmap layer state & memoized heat sources
+  const [heatmapLayer, setHeatmapLayer] = useState<"risk" | "workers" | "off">("risk");
+
+  const heatSources = useMemo(() => {
+    if (heatmapLayer === "risk") {
+      return Object.keys(ZONE_CENTERS).map((zone) => {
+        const center = ZONE_CENTERS[zone];
+        const weight = getGlowScore(zone);
+        return {
+          id: zone,
+          x: center.x,
+          y: center.y,
+          weight,
+          sigma: 150
+        };
+      });
+    } else if (heatmapLayer === "workers") {
+      return workers.map((worker) => {
+        const status = getZoneStatus(worker.zone);
+        let weight = 15; // default low
+        if (status.tier === 3) {
+          weight = 95;
+        } else if (status.tier === 2) {
+          weight = 65; // tier 2: 55-70
+        } else if (status.tier === 0) {
+          weight = 30; // tier 0 watch
+        }
+        return {
+          id: worker.id,
+          x: worker.x,
+          y: worker.y,
+          weight,
+          sigma: 70
+        };
+      });
+    }
+    return [];
+  }, [heatmapLayer, workers, getGlowScore, getZoneStatus]);
+
 
   // Group latest gas readings per zone
   const getLatestReadingsPerZone = () => {
@@ -848,54 +897,70 @@ export default function Dashboard() {
             
             {/* SVG Interactive Floor Plan Map */}
             <div className="lg:col-span-2 p-6 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-850 shadow-xl space-y-4">
-              <div>
-                <h2 className="text-lg font-bold text-slate-200 mb-1 flex items-center gap-2">
-                  <Thermometer className="h-5 w-5 text-emerald-400" />
-                  Facility Floor Plan Visualizer
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Zones glow yellow or red depending on real-time composite safety rule violations.
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-200 mb-1 flex items-center gap-2">
+                    <Thermometer className="h-5 w-5 text-emerald-400" />
+                    Geospatial Risk Heatmap
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    {heatmapLayer === "risk"
+                      ? "Showing real-time continuous safety risk field interpolated across zones."
+                      : heatmapLayer === "workers"
+                      ? "Showing human exposure density risk mapped from worker locations."
+                      : "Continuous geospatial heatmap is turned off."}
+                  </p>
+                </div>
+
+                {/* Heatmap Layer Selector */}
+                <div className="flex items-center bg-slate-950/80 p-1 rounded-lg border border-slate-800 self-start sm:self-center">
+                  <button
+                    onClick={() => setHeatmapLayer("risk")}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                      heatmapLayer === "risk"
+                        ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                        : "text-slate-400 hover:text-slate-200 border border-transparent"
+                    }`}
+                  >
+                    Risk Field
+                  </button>
+                  <button
+                    onClick={() => setHeatmapLayer("workers")}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                      heatmapLayer === "workers"
+                        ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30"
+                        : "text-slate-400 hover:text-slate-200 border border-transparent"
+                    }`}
+                  >
+                    Worker Exposure
+                  </button>
+                  <button
+                    onClick={() => setHeatmapLayer("off")}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                      heatmapLayer === "off"
+                        ? "bg-slate-800/80 text-slate-350 border border-slate-700/50"
+                        : "text-slate-400 hover:text-slate-200 border border-transparent"
+                    }`}
+                  >
+                    Off
+                  </button>
+                </div>
               </div>
 
+              {heatmapLayer !== "off" && (
+                <div className="flex items-center gap-4 py-1.5 border-t border-slate-800/40">
+                  <HeatmapLegend />
+                </div>
+              )}
+
               {/* Plant Map SVG Layout */}
-              <div className="relative">
-                <svg viewBox="0 0 800 400" className="w-full h-auto bg-slate-950 border border-slate-850 rounded-xl">
-                  <defs>
-                    <filter id="heat-blur" x="-20%" y="-20%" width="140%" height="140%">
-                      <feGaussianBlur stdDeviation="40" />
-                    </filter>
-                  </defs>
+              <div className="relative w-full overflow-hidden rounded-xl border border-slate-850 bg-slate-950">
+                {/* Continuous Heatmap Backdrop */}
+                {heatmapLayer !== "off" && (
+                  <RiskHeatmap sources={heatSources} width={800} height={400} showContours={true} />
+                )}
 
-                  {/* HEATMAP BACKDROP LAYER */}
-                  <g filter="url(#heat-blur)" opacity="0.75">
-                    {Object.keys(ZONE_CENTERS).map((zoneName) => {
-                      const center = ZONE_CENTERS[zoneName];
-                      const score = getGlowScore(zoneName);
-                      
-                      let color = "#059669"; // Dim Emerald for safe/nominal
-                      if (score >= 75) {
-                        color = "#f43f5e"; // Rose/Red for Tier 3
-                      } else if (score >= 40) {
-                        color = "#d97706"; // Amber for Tier 2 warning
-                      } else if (score >= 20) {
-                        color = "#0284c7"; // Sky for Watch tier
-                      }
-
-                      const radius = 40 + (score * 0.8);
-
-                      return (
-                        <circle
-                          key={zoneName}
-                          cx={center.x}
-                          cy={center.y}
-                          r={radius}
-                          fill={color}
-                          className="transition-all duration-1000 ease-in-out"
-                        />
-                      );
-                    })}
-                  </g>
+                <svg viewBox="0 0 800 400" className="relative z-10 w-full h-auto bg-transparent">
 
                   {/* Walkways / Roads grid in refinery floor */}
                   <line x1="260" y1="30" x2="260" y2="370" className="stroke-slate-800/60" strokeWidth="12" strokeDasharray="6 4" />
@@ -1196,6 +1261,7 @@ export default function Dashboard() {
                       <p className="text-xs text-slate-300 leading-relaxed">
                         {rule.reason}
                       </p>
+                      <AlertExplainabilityChart apiUrl={apiUrl} />
                       {/* Related Historical Incidents Accordion */}
                       {(() => {
                         const ruleIncidents = riskAssessment.related_incidents?.filter(inc => 
@@ -1416,6 +1482,20 @@ export default function Dashboard() {
                     </div>
                   </div>
                 )}
+
+                {/* Download PDF Button */}
+                <button
+                  onClick={() => {
+                    const activeZone = emergencyProtocol?.zone || ["Zone-A", "Zone-B", "Zone-C", "Zone-D", "Zone-E", "Zone-F"].find(z => 
+                      riskAssessment?.triggered_rules?.some(r => r.severity === 3 && r.reason.includes(z))
+                    ) || "Zone-A";
+                    handleDownloadPdf(activeZone);
+                  }}
+                  className="w-full py-2 px-3 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <Download className="h-4 w-4" />
+                  Download Regulatory Evidence PDF
+                </button>
                 {/* Evacuation Confirmation Button */}
                 <div className="pt-3 border-t border-slate-800/80">
                   {alarmState?.facility_evacuation_active ? (
