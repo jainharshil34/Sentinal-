@@ -314,7 +314,7 @@ export default function DeploymentTrustPage() {
                   style={{ stroke: status.trust_score >= minTrust ? "#10b981" : "#f43f5e" }}
                 />
               </svg>
-              <div className="absolute flex flex-col items-center">
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none text-center">
                 <span className="text-3xl font-black text-slate-100">{status.trust_score}%</span>
                 <span className="text-[9px] font-black uppercase text-slate-500 mt-1">Trust Score</span>
               </div>

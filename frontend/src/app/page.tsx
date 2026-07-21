@@ -1498,7 +1498,7 @@ export default function Dashboard() {
                     }}
                   />
                 </svg>
-                <div className="absolute flex flex-col items-center justify-center">
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none text-center">
                   <span className={`text-5xl font-black tracking-tight ${currentTier.text}`}>
                     {riskAssessment?.score || 0}
                   </span>
